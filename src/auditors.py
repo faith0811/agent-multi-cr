@@ -75,8 +75,9 @@ def extract_and_update_memo(
                         if not new_memo.endswith("\n"):
                             new_memo += "\n"
                         new_memo += append_text
-            except Exception:
-                pass
+            except Exception as exc:
+                import sys
+                sys.stderr.write(f"Warning: Failed to parse MEMO_JSON for {auditor.name}: {exc}\n")
         else:
             cleaned_lines.append(line)
 

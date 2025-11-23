@@ -17,11 +17,11 @@ def main() -> None:
     parser.add_argument(
         "--context-mode",
         choices=["diff", "repo", "stdin"],
-        default="diff",
+        default="repo",
         help=(
             "What to use as the shared context for the review:\n"
-            "  diff  - use git diff / git diff --cached (default)\n"
-            "  repo  - use a repository snapshot (limited by file count and size)\n"
+            "  diff  - use git diff / git diff --cached\n"
+            "  repo  - use the repository in the current working directory (default)\n"
             "  stdin - read context from stdin (e.g. `gh pr diff 123 | ...`)"
         ),
     )
@@ -68,8 +68,8 @@ def main() -> None:
     parser.add_argument(
         "--max-queries",
         type=int,
-        default=4,
-        help="Maximum number of clarification questions the arbiter may ask (default: 4).",
+        default=50,
+        help="Maximum number of clarification questions the arbiter may ask (default: 50).",
     )
     parser.add_argument(
         "--auditors-workdir",
@@ -81,22 +81,48 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--max-context-files",
-        type=int,
-        default=40,
-        help="When context-mode=repo, maximum number of files to include in the snapshot (default: 40).",
+        "--include-p2-p3",
+        action="store_true",
+        help=(
+            "If set, include P2/P3 issues in the final output. "
+            "By default, only P0/P1 issues are shown in detail."
+        ),
     )
     parser.add_argument(
-        "--max-context-bytes-per-file",
-        type=int,
-        default=4000,
-        help="When context-mode=repo, maximum bytes per file to include (default: 4000).",
+        "--verbose",
+        action="store_true",
+        help="If set, print every prompt sent to Codex/Gemini to stderr.",
+    )
+    parser.add_argument(
+        "--output-lang",
+        choices=["en", "zh"],
+        default="zh",
+        help="Language of the final report: 'zh' (Chinese, default) or 'en'.",
+    )
+    parser.add_argument(
+        "--arbiter-round-mode",
+        choices=["single", "multi"],
+        default="single",
+        help=(
+            "Arbiter behavior: 'single' (default) produces a one-shot summary "
+            "with no follow-up questions; 'multi' allows multiple rounds of "
+            "clarification questions."
+        ),
     )
 
     args = parser.parse_args()
 
+    if args.max_queries < 0:
+        parser.error("--max-queries must be non-negative.")
+
     if args.codex_models:
-        codex_configs: List[Tuple[str, str]] = [(name, "high") for name in args.codex_models]
+        codex_configs: List[Tuple[str, str]] = []
+        for val in args.codex_models:
+            if ":" in val:
+                m, e = val.split(":", 1)
+                codex_configs.append((m, e))
+            else:
+                codex_configs.append((val, "high"))
     else:
         codex_configs = [
             ("gpt-5.1", "high"),
@@ -112,9 +138,12 @@ def main() -> None:
         arbiter_family=args.arbiter_family,
         max_queries=args.max_queries,
         base_workdir=args.auditors_workdir,
-        max_context_files=args.max_context_files,
-        max_context_bytes_per_file=args.max_context_bytes_per_file,
+        max_context_files=40,
+        max_context_bytes_per_file=4000,
+        verbose=args.verbose,
+        output_lang=args.output_lang,
+        include_p2_p3=args.include_p2_p3,
+        arbiter_round_mode=args.arbiter_round_mode,
     )
 
     print(result)
-

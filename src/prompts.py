@@ -9,19 +9,23 @@ def build_initial_review_prompt(
 ) -> str:
     """Prompt used for the very first independent review."""
     return dedent(f"""
-    You are a senior code reviewer acting as **{reviewer_name}**.
+    You are **{reviewer_name}**, a senior code reviewer.
 
-    You are working in your own private workspace. You **must not** modify the real project
-    files. Treat the code under review as read-only; your job is to analyze and comment only.
+    You are working in a read-only copy of this repository in your current workspace.
+    You **must not** modify real project files; your job is to analyze and comment only.
 
-    The coordinator gives you the following task:
+    The coordinator gives you this task:
 
     <REVIEW_TASK>
     {task_description}
     </REVIEW_TASK>
 
-    Here is the shared code/context for this task (it may be a diff, a repository snapshot,
-    a PR diff, or some other text representation of the project):
+    The code under review lives in the files in your current working directory
+    (a copy of the repository). You can and should use your tools (search,
+    file inspection, git commands, etc.) to examine any code you need.
+
+    The coordinator also provides this extra text context (may be empty, a note,
+    a diff, or other text):
 
     ```text
     {context_text}
@@ -37,32 +41,30 @@ def build_initial_review_prompt(
     You may add new notes to this memo at the end of your answer.
 
     Your job:
-    1. Interpret the task description carefully and apply it to the given context.
-       For example, if the task asks you to review the whole repo for security issues,
-       focus on that; if it asks you to review a specific PR for correctness, focus on that.
-    2. Identify potential bugs, missing edge cases, performance issues, security risks,
-       and readability problems, relative to the task.
-    3. For each issue, explain clearly why it is a problem.
-    4. Suggest concrete, actionable fixes or improvements.
-    5. If you believe some parts are risky or ambiguous and require a human engineer to
-       inspect them, explicitly call that out.
+    - Focus on the task above.
+    - Identify potential bugs, missing edge cases, performance issues, security risks,
+      and readability problems.
+    - For each issue, explain clearly why it is a problem and how to fix or improve it.
+    - If some parts are risky or ambiguous and require a human engineer, explicitly
+      call that out.
 
-    Output format (strictly follow this):
+    Output format (strict):
     - Use valid Markdown.
     - Start with a one-sentence overall summary.
-    - Then organize findings by severity:
-      - `Blocking issues`
-      - `Important issues`
-      - `Minor suggestions`
-    - Under each severity, use a numbered list.
+    - Then organize findings into four sections with these exact headings:
+      - `P0 issues` – critical / blocking, must be fixed before merge.
+      - `P1 issues` – important, should be fixed soon.
+      - `P2 issues` – normal, worthwhile improvements.
+      - `P3 issues` – minor / nice-to-have.
+    - Under each section, use a numbered list.
       For each item include:
-        - A short title
-        - Approximate location (e.g., file or section, described in words is fine)
-        - Description of the problem
-        - Why it matters
-        - A concrete suggestion for how to fix or improve it
-        - If you think this particular item *definitely* needs a human to double-check,
-          add a tag like `(NEEDS HUMAN REVIEW)` at the end of the item.
+        - short title
+        - approximate location (e.g., file or section, described in words is fine)
+        - description of the problem
+        - why it matters
+        - a concrete suggestion for how to fix or improve it
+        - if this item *definitely* needs a human to double-check, add
+          `(NEEDS HUMAN REVIEW)` at the end of the item.
 
     At the very end of your answer, on a separate line, add:
 
@@ -70,6 +72,106 @@ def build_initial_review_prompt(
 
     - `append` should contain any additional private notes you want to keep for yourself
       (or an empty string if you have nothing to add).
+    - If `overwrite` is true, your existing memo will be replaced with `append`.
+      Otherwise, `append` will be appended to your existing memo.
+    """).strip()
+
+
+def build_peer_review_prompt(
+    reviewer_name: str,
+    task_description: str,
+    context_text: str,
+    own_review: str,
+    other_reviews_block: str,
+    memo_text: str,
+    round_index: int,
+    max_rounds: int,
+) -> str:
+    """
+    Prompt used when a reviewer cross-checks their own review against others.
+
+    This is where reviewers reconcile disagreements among themselves before
+    the arbiter aggregates the final result.
+    """
+    return dedent(f"""
+    You are **{reviewer_name}**, a senior code reviewer.
+
+    You are working in a read-only copy of this repository in your current workspace.
+    You **must not** modify real project files; your job is to analyze and comment only.
+
+    The coordinator gave you this task:
+
+    <REVIEW_TASK>
+    {task_description}
+    </REVIEW_TASK>
+
+    The code under review lives in the files in your current working directory
+    (a copy of the repository). You can and should use your tools (search,
+    file inspection, git commands, etc.) to examine any code you need.
+
+    The coordinator also provides this extra text context (may be empty, a note,
+    a diff, or other text):
+
+    ```text
+    {context_text}
+    ```
+
+    This is cross-check round {round_index} of at most {max_rounds}.
+
+    Here is your earlier review:
+
+    <YOUR_INITIAL_REVIEW>
+    {own_review}
+    </YOUR_INITIAL_REVIEW>
+
+    Here are the other reviewers' latest reviews:
+
+    <OTHER_REVIEWS>
+    {other_reviews_block or "(no other reviews yet)"}
+    </OTHER_REVIEWS>
+
+    Here is your private memo for this repository (only you and the coordinator can see this):
+
+    <YOUR_PRIVATE_MEMO>
+    {memo_text or "(empty)"}
+    </YOUR_PRIVATE_MEMO>
+
+    Your job in this round:
+    - Compare your findings with the other reviewers.
+    - For each high-priority (P0/P1) issue raised by anyone, decide whether you
+      agree it is a real issue and whether the priority is appropriate.
+    - If other reviewers identified valid issues that you missed, adopt them into
+      your own list with an appropriate priority.
+    - If you disagree with issues or priorities, say so clearly and explain why.
+    - Then produce an updated, self-contained review that reflects your final.
+      opinion, organized by P0–P3 just like your initial review.
+
+    Output format (same as your initial review, but updated):
+    - Use valid Markdown.
+    - Start with a one-sentence overall summary.
+    - Then organize findings into four sections with these exact headings:
+      - `P0 issues` – critical / blocking, must be fixed before merge.
+      - `P1 issues` – important, should be fixed soon.
+      - `P2 issues` – normal, worthwhile improvements.
+      - `P3 issues` – minor / nice-to-have.
+    - Under each section, use a numbered list.
+      For each item include:
+        - short title
+        - approximate location (file / function, described in words is fine)
+        - description of the problem
+        - why it matters
+        - a concrete suggestion for how to fix or improve it
+        - if this item definitely needs a human to double-check, add
+          `(NEEDS HUMAN REVIEW)` at the end of the item.
+    - When you reference agreement or disagreement with others, do it briefly in
+      the text (e.g., "Other reviewers agree that ...", "I disagree with ...").
+
+    At the very end of your answer, on a separate line, add:
+
+    MEMO_JSON: {{"append": "...", "overwrite": false}}
+
+    - `append` should contain any additional private notes you want to keep for yourself
+      based on this cross-check (or an empty string if you have nothing to add).
     - If `overwrite` is true, your existing memo will be replaced with `append`.
       Otherwise, `append` will be appended to your existing memo.
     """).strip()
@@ -86,10 +188,10 @@ def build_followup_prompt(
 ) -> str:
     """Prompt used when the arbiter asks a reviewer a follow-up question."""
     return dedent(f"""
-    You are a senior code reviewer acting as **{reviewer_name}**.
+    You are **{reviewer_name}**, a senior code reviewer.
 
-    You are working in your own private workspace. You **must not** modify the real project
-    files. Treat the code under review as read-only; your job is to analyze and comment only.
+    You are working in a read-only copy of this repository in your current workspace.
+    You **must not** modify real project files; your job is to analyze and comment only.
 
     The coordinator originally gave you this task:
 
@@ -97,7 +199,12 @@ def build_followup_prompt(
     {task_description}
     </REVIEW_TASK>
 
-    Here is the shared code/context for this task:
+    The code under review lives in the files in your current working directory
+    (a copy of the repository). You can and should use your tools (search,
+    file inspection, git commands, etc.) to examine any file you need.
+
+    The coordinator also provides this extra text context (may be empty, a note,
+    a diff, or other text):
 
     ```text
     {context_text}
@@ -133,7 +240,15 @@ def build_followup_prompt(
     - whether you believe the discussed code is truly a problem that requires changes,
       or acceptable as-is;
     - how confident you are (0–1);
-    - what you recommend in practice, in concrete terms.
+    - what you recommend in practice, in concrete terms;
+    - when asked about a potential issue (even if you did not mention it before),
+      explicitly say whether you **agree** it is a real issue, **disagree**, or are
+      **uncertain**, and, if you think it is an issue, what approximate priority
+      you would give it on the P0–P3 scale:
+        - P0 – critical / blocking, must be fixed before merge.
+        - P1 – important, should be fixed soon.
+        - P2 – normal, worthwhile improvement.
+        - P3 – minor / nice-to-have.
 
     Respond in **English** using Markdown.
 
@@ -157,6 +272,8 @@ def build_arbiter_prompt(
     qa_history,
     max_queries: int,
     query_count: int,
+    include_p2_p3: bool,
+    allow_queries: bool,
 ) -> str:
     """Build the arbiter prompt."""
     reviewers_block_lines = [f"- {auditor.name}" for auditor in auditors]
@@ -181,7 +298,7 @@ def build_arbiter_prompt(
     else:
         qa_block = "(no follow-up questions have been asked yet)"
 
-    return dedent(f"""
+    base_prompt = f"""
     You are the **arbiter code reviewer** named {arbiter_name}.
 
     The coordinator has defined the following review task:
@@ -190,7 +307,12 @@ def build_arbiter_prompt(
     {task_description}
     </REVIEW_TASK>
 
-    The shared code/context for this task is:
+    You **do not** read or inspect the codebase directly. You only see what
+    the auditors report and the Q&A between you and them. Your job is to
+    reason about and reconcile those messages.
+
+    The coordinator also provides the following extra text context
+    (which may be empty, a short note, a diff, or other text):
 
     ```text
     {context_text}
@@ -209,7 +331,11 @@ def build_arbiter_prompt(
     Your job is to:
     - Understand where the auditors broadly agree.
     - Detect places where there seems to be uncertainty or disagreement.
+    - Actively cross-check important issues across auditors, not just accept the
+      first reviewer who mentioned them.
     - Ask *targeted* clarification questions to individual auditors when necessary.
+    - Base all of your decisions on the auditors' written reviews and Q&A replies,
+      not on your own reading of the code.
     - Eventually produce a single, unified review suitable to share with humans.
 
     Very important policy:
@@ -219,12 +345,42 @@ def build_arbiter_prompt(
     - You should not try to "force" artificial consensus. It is OK to escalate
       genuinely unclear cases to humans.
 
+    You have a hard limit of {max_queries} clarification questions in total.
+    Up to now, you have already used {query_count} clarification questions.
+
+    """
+
+    if allow_queries:
+        base_prompt += f"""
+
     You are called repeatedly in a loop. At each step, you must choose one of:
     1. Ask ONE auditor a clarification question about a specific aspect of the code.
     2. Produce the final unified review.
 
-    You have a hard limit of {max_queries} clarification questions in total.
-    Up to now, you have already used {query_count} clarification questions.
+    How to use your clarification questions (very important):
+    - Your goal is to **cross-check** the reviewers' findings and priorities.
+    - Before you return a final review, you **must**:
+      - for every high-priority (P0/P1) issue that any auditor proposes, ask
+        each other auditor at least once whether they agree, disagree, or are
+        uncertain about that issue, until you either get their stance or
+        hit the {max_queries} limit;
+      - make sure every auditor has been asked at least one direct question
+        about the emerging list of P0/P1 issues.
+    - When you ask about such an issue, describe the code and concern in neutral
+      terms without mentioning other auditors by name, and ask the target auditor
+      to state whether they agree, disagree, or are uncertain, and what priority
+      they would assign.
+    """
+    else:
+        base_prompt += """
+
+    In this run you are called exactly once to produce the unified review.
+    - You must *not* ask any clarification questions.
+    - You must respond with "state": "final" and provide the best unified review
+      you can based only on the existing reviews and Q&A.
+    """
+
+    base_prompt += f"""
 
     List of auditors (by name):
     {reviewers_block}
@@ -262,17 +418,54 @@ def build_arbiter_prompt(
 
     The final_markdown should:
     - Summarize overall impressions, in the context of the given task.
-    - Present a unified, deduplicated issue list grouped by severity.
-    - For each issue, mention whether it appears to be:
-        - confidently agreed upon by the auditors, or
-        - uncertain / controversial.
-    - For any uncertain / controversial parts, explicitly label them with
-      `NEEDS HUMAN REVIEW` and explain briefly why.
+    - Present a unified, deduplicated issue list.
+    - For **every issue that you decide to show**, assign a priority label in `P0`–`P3`
+      and include it at the start of the item, e.g. `[P0] Title` or `[P2] Title`.
+      - P0 = critical / blocking, must be fixed before merge.
+      - P1 = important, should be fixed soon.
+      - P2 = normal, worthwhile improvement.
+      - P3 = minor / nice-to-have.
+    - For each issue, indicate which auditors/models originally proposed it and
+      which auditors appear to agree with it, using a short machine-readable
+      line like:
+        `Models: proposed_by=[...], agreed_by=[...]`
+      where the names come from the auditor list above (for example
+      `Codex[gpt-5.1|high]`, `Gemini[gemini-3-pro-preview]`).
+      - `proposed_by` must list all auditors whose initial reviews clearly
+        introduced or argued for the issue.
+      - `agreed_by` should list auditors who either:
+          * explicitly confirmed the issue in follow-up Q&A, or
+          * clearly described the same underlying problem or risk in their own review.
+      - Do **not** leave all `agreed_by` lists empty by default. Only leave
+        `agreed_by` empty when you genuinely cannot infer any agreement from
+        the reviews or Q&A.
+    - When different auditors appear to disagree about whether an issue is real,
+      or about its severity/priority, explicitly mention that disagreement in the
+      item's text and still choose a single final P0–P3 priority based on the
+      evidence you have. If that disagreement leaves residual uncertainty, mark
+      the item with `NEEDS HUMAN REVIEW` and briefly explain why.
+    - For any part that you believe is ambiguous, risky, or cannot be assessed
+      confidently even after questions, explicitly mark it with
+      `NEEDS HUMAN REVIEW` and briefly explain why.
 
     If you believe the information you already have is sufficient, you may
     choose "final" even if you have not used all {max_queries} questions.
     If you have already reached the limit of {max_queries} questions, you
     must choose "final" and make the best assessment you can, marking
     ambiguous parts as `NEEDS HUMAN REVIEW`.
-    """).strip()
+    """
 
+    if include_p2_p3:
+        return dedent(base_prompt).strip()
+
+    # Default mode: only show P0/P1 issues in detail.
+    # P2/P3 issues may be considered internally but should not be listed
+    # as full items in the final output.
+    extra = """
+
+    DISPLAY POLICY (when deciding what to show):
+    - In the final_markdown, list only P0 and P1 issues in detail.
+    - Do NOT include full items for P2 or P3 issues. You may briefly mention
+      that lower-priority issues exist, but do not list them individually.
+    """
+    return dedent(base_prompt + extra).strip()

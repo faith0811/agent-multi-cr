@@ -56,6 +56,7 @@ class TestPrompts(unittest.TestCase):
             qa_history=[],
             max_queries=3,
             query_count=1,
+            include_p2_p3=True,
         )
         self.assertIn("ArbiterX", prompt)
         self.assertIn("Auditor1", prompt)
