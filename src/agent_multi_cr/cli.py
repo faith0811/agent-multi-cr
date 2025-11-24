@@ -62,7 +62,9 @@ def main() -> None:
         default="codex",
         help=(
             "Which family acts as arbiter for the final decision: "
-            "'codex' (default, uses the first Codex model) or 'gemini'."
+            "'codex' (default, uses a dedicated gpt-5.1-codex|low arbiter "
+            "separate from the reviewer models) or 'gemini' (uses the "
+            "configured Gemini model as arbiter)."
         ),
     )
     parser.add_argument(

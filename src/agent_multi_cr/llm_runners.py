@@ -10,6 +10,42 @@ from .prompts import (
 from .shell_utils import run_shell
 
 
+def _run_auditor_llm_with_memo(
+    *,
+    auditor: Auditor,
+    label: str,
+    prompt: str,
+    memo_before: str,
+    verbose: bool,
+    error_heading: str,
+    error_body_prefix: str,
+):
+    """Shared helper to run an auditor LLM call and handle memo updates."""
+    if verbose:
+        import sys
+
+        sys.stderr.write(
+            f"\n==== LLM PROMPT BEGIN [{label}] ====\n{prompt}\n"
+            f"==== LLM PROMPT END   [{label}] ====\n"
+        )
+        sys.stderr.flush()
+    try:
+        if auditor.kind == "codex":
+            raw = run_codex(auditor, prompt)
+        elif auditor.kind == "gemini":
+            raw = run_gemini(auditor, prompt)
+        else:
+            raise ValueError(f"Unknown auditor kind: {auditor.kind}")
+    except Exception as e:
+        import sys
+
+        sys.stderr.write(f"Error running {label}: {e}\n")
+        return f"{error_heading}\n\n{error_body_prefix}{e}", memo_before
+
+    cleaned, memo_after = extract_and_update_memo(auditor, raw, memo_before)
+    return cleaned, memo_after
+
+
 def run_codex(auditor: Auditor, prompt: str) -> str:
     """
     Call Codex CLI in non-interactive mode for a given auditor.
@@ -71,29 +107,15 @@ def run_auditor_initial_review(
     )
 
     label = f"{auditor.name} initial review"
-    if verbose:
-        import sys
-
-        sys.stderr.write(
-            f"\n==== LLM PROMPT BEGIN [{label}] ====\n{prompt}\n"
-            f"==== LLM PROMPT END   [{label}] ====\n"
-        )
-        sys.stderr.flush()
-    try:
-        if auditor.kind == "codex":
-            raw = run_codex(auditor, prompt)
-        elif auditor.kind == "gemini":
-            raw = run_gemini(auditor, prompt)
-        else:
-            raise ValueError(f"Unknown auditor kind: {auditor.kind}")
-    except Exception as e:
-        # Propagate error as a failed review instead of crashing the pipeline
-        import sys
-        sys.stderr.write(f"Error running {label}: {e}\n")
-        return f"## Review Failed\n\nAuditor encountered an error: {e}", memo_before
-
-    cleaned, memo_after = extract_and_update_memo(auditor, raw, memo_before)
-    return cleaned, memo_after
+    return _run_auditor_llm_with_memo(
+        auditor=auditor,
+        label=label,
+        prompt=prompt,
+        memo_before=memo_before,
+        verbose=verbose,
+        error_heading="## Review Failed",
+        error_body_prefix="Auditor encountered an error: ",
+    )
 
 
 def run_auditor_followup(
@@ -122,28 +144,15 @@ def run_auditor_followup(
     )
 
     label = f"{auditor.name} follow-up"
-    if verbose:
-        import sys
-
-        sys.stderr.write(
-            f"\n==== LLM PROMPT BEGIN [{label}] ====\n{prompt}\n"
-            f"==== LLM PROMPT END   [{label}] ====\n"
-        )
-        sys.stderr.flush()
-    try:
-        if auditor.kind == "codex":
-            raw = run_codex(auditor, prompt)
-        elif auditor.kind == "gemini":
-            raw = run_gemini(auditor, prompt)
-        else:
-            raise ValueError(f"Unknown auditor kind: {auditor.kind}")
-    except Exception as e:
-        import sys
-        sys.stderr.write(f"Error running {label}: {e}\n")
-        return f"## Reply Failed\n\nError: {e}", memo_before
-
-    cleaned, memo_after = extract_and_update_memo(auditor, raw, memo_before)
-    return cleaned, memo_after
+    return _run_auditor_llm_with_memo(
+        auditor=auditor,
+        label=label,
+        prompt=prompt,
+        memo_before=memo_before,
+        verbose=verbose,
+        error_heading="## Reply Failed",
+        error_body_prefix="Error: ",
+    )
 
 
 def run_reviewer_peer_round(
@@ -174,28 +183,15 @@ def run_reviewer_peer_round(
     )
 
     label = f"{auditor.name} peer round {round_index}"
-    if verbose:
-        import sys
-
-        sys.stderr.write(
-            f"\n==== LLM PROMPT BEGIN [{label}] ====\n{prompt}\n"
-            f"==== LLM PROMPT END   [{label}] ====\n"
-        )
-        sys.stderr.flush()
-    try:
-        if auditor.kind == "codex":
-            raw = run_codex(auditor, prompt)
-        elif auditor.kind == "gemini":
-            raw = run_gemini(auditor, prompt)
-        else:
-            raise ValueError(f"Unknown auditor kind: {auditor.kind}")
-    except Exception as e:
-        import sys
-        sys.stderr.write(f"Error running {label}: {e}\n")
-        return f"## Cross-check Failed\n\nError: {e}", memo_before
-
-    cleaned, memo_after = extract_and_update_memo(auditor, raw, memo_before)
-    return cleaned, memo_after
+    return _run_auditor_llm_with_memo(
+        auditor=auditor,
+        label=label,
+        prompt=prompt,
+        memo_before=memo_before,
+        verbose=verbose,
+        error_heading="## Cross-check Failed",
+        error_body_prefix="Error: ",
+    )
 
 
 def parse_arbiter_json(raw: str):

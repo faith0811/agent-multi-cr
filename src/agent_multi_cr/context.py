@@ -1,17 +1,25 @@
 import os
 import subprocess
 import sys
+import warnings
 
 from .shell_utils import run_shell
 
 
 def get_git_diff(use_cached: bool) -> str:
-    """Get git diff text for the current repo.
+    """Get git diff text for the current repo. (Deprecated)
 
-    This helper remains available for future callers that need the full diff
-    contents, but the main pipeline now uses a lighter-weight check when it
-    only needs to verify that changes exist.
+    This helper is kept only for backward compatibility and may be removed in
+    a future release. New code should rely on running `git diff` directly or
+    use `resolve_context_text(context_mode=\"diff\", ...)` instead.
     """
+    warnings.warn(
+        "agent_multi_cr.context.get_git_diff() is deprecated and may be removed "
+        "in a future release; use `git diff` directly or "
+        "resolve_context_text(context_mode='diff', ...) instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     diff_cmd = ["git", "diff", "--cached"] if use_cached else ["git", "diff"]
     diff = run_shell(diff_cmd)
     if not diff.strip():

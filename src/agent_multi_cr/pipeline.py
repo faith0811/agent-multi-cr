@@ -250,8 +250,6 @@ def run_pipeline(
     stop_progress = threading.Event()
 
     def _progress_reporter() -> None:
-        import sys
-
         last_len = 0
         # Emit a progress snapshot every 5 seconds until the run finishes.
         if stop_progress.wait(5.0):
@@ -458,6 +456,25 @@ def run_pipeline(
     query_count = 0
     final_markdown: Optional[str] = None
 
+    def _call_arbiter_step(
+        max_queries_for_call: int,
+        query_index: int,
+        allow_queries_flag: bool,
+    ):
+        return run_arbiter_step(
+            arbiter=arbiter,
+            task_description=task_description,
+            context_text=context_text,
+            auditors=auditors,
+            initial_reviews=initial_reviews,
+            qa_history=qa_history,
+            max_queries=max_queries_for_call,
+            query_count=query_index,
+            include_p2_p3=include_p2_p3,
+            allow_queries=allow_queries_flag,
+            verbose=verbose,
+        )
+
     if arbiter_round_mode == "single":
         print("\n▶ Arbiter: summarizing cross-checked reviews (single-shot)...\n", flush=True)
     else:
@@ -468,18 +485,10 @@ def run_pipeline(
     if arbiter_round_mode == "single":
         # One-shot arbiter: no clarification questions allowed.
         print(f"  - Arbiter single-shot decision (no follow-up questions)...", flush=True)
-        control = run_arbiter_step(
-            arbiter=arbiter,
-            task_description=task_description,
-            context_text=context_text,
-            auditors=auditors,
-            initial_reviews=initial_reviews,
-            qa_history=qa_history,
-            max_queries=0,
-            query_count=0,
-            include_p2_p3=include_p2_p3,
-            allow_queries=False,
-            verbose=verbose,
+        control = _call_arbiter_step(
+            max_queries_for_call=0,
+            query_index=0,
+            allow_queries_flag=False,
         )
 
         state = control.get("state")
@@ -497,18 +506,10 @@ def run_pipeline(
     else:
         while query_count < max_queries:
             print(f"  - Arbiter step {query_count + 1}/{max_queries}...", flush=True)
-            control = run_arbiter_step(
-                arbiter=arbiter,
-                task_description=task_description,
-                context_text=context_text,
-                auditors=auditors,
-                initial_reviews=initial_reviews,
-                qa_history=qa_history,
-                max_queries=max_queries,
-                query_count=query_count,
-                include_p2_p3=include_p2_p3,
-                allow_queries=True,
-                verbose=verbose,
+            control = _call_arbiter_step(
+                max_queries_for_call=max_queries,
+                query_index=query_count,
+                allow_queries_flag=True,
             )
 
             state = control.get("state")
@@ -568,18 +569,10 @@ def run_pipeline(
             # All allowed clarification questions have been used; record this in progress.
             with progress_lock:
                 progress["arbiter_step"] = query_count
-            final_control = run_arbiter_step(
-                arbiter=arbiter,
-                task_description=task_description,
-                context_text=context_text,
-                auditors=auditors,
-                initial_reviews=initial_reviews,
-                qa_history=qa_history,
-                max_queries=max_queries,
-                query_count=max_queries,
-                include_p2_p3=include_p2_p3,
-                allow_queries=False,
-                verbose=verbose,
+            final_control = _call_arbiter_step(
+                max_queries_for_call=max_queries,
+                query_index=max_queries,
+                allow_queries_flag=False,
             )
             if final_control.get("state") == "final":
                 final_markdown = final_control.get("final_markdown", "") or str(final_control)
