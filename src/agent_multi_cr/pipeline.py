@@ -439,9 +439,13 @@ def run_pipeline(
                 flush=True,
             )
 
-    # Optional reviewer cross-check round(s) before arbiter aggregation.
-    # For now we run a single peer round where each reviewer sees others'
-    # initial reviews and updates their own view.
+    # Preserve the original initial reviews for the arbiter so it can
+    # distinguish between issues that were first proposed in an initial
+    # review vs. those adopted later during peer reconciliation.
+    raw_initial_reviews: Dict[str, str] = dict(initial_reviews)
+
+    # Reviewer cross-check round before arbiter aggregation: each reviewer sees
+    # others' initial reviews once and updates their own view.
     print("\n▶ Round 2: reviewers cross-check each other...\n", flush=True)
     with progress_lock:
         progress["phase"] = "peer_round"
@@ -467,8 +471,6 @@ def run_pipeline(
                 context_text=context_text,
                 own_review=own_review,
                 other_reviews_block=other_block,
-                round_index=1,
-                max_rounds=1,
                 verbose=verbose,
             )
             future_to_auditor[future] = auditor
@@ -483,8 +485,10 @@ def run_pipeline(
             updated_reviews[auditor.name] = review
             print(f"    ✓ Peer cross-check finished for {auditor.name}.", flush=True)
 
-    # The arbiter will now see the cross-checked reviews as its primary input.
+    # The arbiter will see both the original initial reviews and the latest
+    # cross-checked reviews as its primary input.
     initial_reviews = updated_reviews
+    latest_reviews: Dict[str, str] = initial_reviews
 
     qa_history: List[Dict[str, str]] = []
     query_count = 0
@@ -500,7 +504,8 @@ def run_pipeline(
             task_description=task_description,
             context_text=context_text,
             auditors=auditors,
-            initial_reviews=initial_reviews,
+            initial_reviews=raw_initial_reviews,
+            latest_reviews=latest_reviews,
             qa_history=qa_history,
             max_queries=max_queries_for_call,
             query_count=query_index,
@@ -570,7 +575,7 @@ def run_pipeline(
                     break
 
                 qa_snippet = build_qa_snippet_for_reviewer(qa_history, target)
-                initial_review_text = initial_reviews[target]
+                initial_review_text = latest_reviews[target]
 
                 answer, _memo = run_auditor_followup(
                     auditor=target_auditor,
@@ -631,10 +636,6 @@ def run_pipeline(
             sys.stderr.write(f"Translation to Chinese failed: {exc}\n")
             sys.stderr.flush()
 
-    # For CLI output, we only return the unified (and possibly translated) review.
-    parts: List[str] = []
-    parts.append(final_markdown)
-
     # Clean up this run's auditors workdir after the run to avoid accumulation.
     print(f"\n▶ Cleaning auditors workdir for this run at {run_workdir_abs}...\n", flush=True)
     if os.path.isdir(run_workdir_abs):
@@ -663,4 +664,4 @@ def run_pipeline(
     sys.stderr.write("\n")
     sys.stderr.flush()
 
-    return "".join(parts).strip()
+    return (final_markdown or "").strip()

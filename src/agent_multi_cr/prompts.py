@@ -113,8 +113,6 @@ def build_peer_review_prompt(
     own_review: str,
     other_reviews_block: str,
     memo_text: str,
-    round_index: int,
-    max_rounds: int,
 ) -> str:
     """
     Prompt used when a reviewer cross-checks their own review against others.
@@ -267,6 +265,7 @@ def build_arbiter_prompt(
     context_text: str,
     auditors,
     initial_reviews,
+    latest_reviews,
     qa_history,
     max_queries: int,
     query_count: int,
@@ -282,6 +281,12 @@ def build_arbiter_prompt(
         for name, review in initial_reviews.items()
     ]
     initial_reviews_block = "\n\n".join(initial_reviews_block_parts)
+
+    latest_reviews_block_parts = [
+        f'<REVIEW name="{name}">\n{review}\n</REVIEW>'
+        for name, review in latest_reviews.items()
+    ]
+    latest_reviews_block = "\n\n".join(latest_reviews_block_parts)
 
     if qa_history:
         qa_lines = []
@@ -323,8 +328,9 @@ def build_arbiter_prompt(
     You are given:
     1. The task description and shared context above.
     2. The list of auditors.
-    3. Each auditor's initial review.
-    4. A history of follow-up Q&A exchanges between you and individual auditors.
+    3. Each auditor's initial review (before peer cross-checks).
+    4. Each auditor's latest cross-checked review (after reconciling with others).
+    5. A history of follow-up Q&A exchanges between you and individual auditors.
 
     Your job is to:
     - Understand where the auditors broadly agree.
@@ -383,9 +389,13 @@ def build_arbiter_prompt(
     List of auditors (by name):
     {reviewers_block}
 
-    Initial reviews from each auditor:
+    Initial reviews from each auditor (original proposals):
 
     {initial_reviews_block}
+
+    Latest cross-checked reviews from each auditor (after peer reconciliation):
+
+    {latest_reviews_block}
 
     Follow-up Q&A so far:
 

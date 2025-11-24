@@ -174,8 +174,6 @@ def run_reviewer_peer_round(
     context_text: str,
     own_review: str,
     other_reviews_block: str,
-    round_index: int,
-    max_rounds: int,
     verbose: bool = False,
 ):
     """
@@ -191,11 +189,9 @@ def run_reviewer_peer_round(
         own_review=own_review,
         other_reviews_block=other_reviews_block,
         memo_text=memo_before,
-        round_index=round_index,
-        max_rounds=max_rounds,
     )
 
-    label = f"{auditor.name} peer round {round_index}"
+    label = f"{auditor.name} peer round"
     return _run_auditor_llm_with_memo(
         auditor=auditor,
         label=label,
@@ -245,6 +241,7 @@ def run_arbiter_step(
     context_text: str,
     auditors,
     initial_reviews,
+    latest_reviews,
     qa_history,
     max_queries: int,
     query_count: int,
@@ -259,6 +256,7 @@ def run_arbiter_step(
         context_text=context_text,
         auditors=auditors,
         initial_reviews=initial_reviews,
+        latest_reviews=latest_reviews,
         qa_history=qa_history,
         max_queries=max_queries,
         query_count=query_count,
@@ -272,8 +270,6 @@ def run_arbiter_step(
     # If arbiter fails, we probably want to stop.
     label = f"Arbiter {arbiter.name} step {query_count + 1}"
     if verbose:
-        import sys
-
         sys.stderr.write(
             f"\n==== LLM PROMPT BEGIN [{label}] ====\n{prompt}\n"
             f"==== LLM PROMPT END   [{label}] ====\n"

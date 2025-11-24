@@ -45,9 +45,8 @@ def load_memo(auditor: Auditor) -> str:
 
 def save_memo(auditor: Auditor, memo_text: str) -> None:
     """Persist memo text for an auditor."""
-    root = auditor.memo_root or auditor.workdir
-    os.makedirs(root, exist_ok=True)
     path = memo_path(auditor)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(memo_text)
 

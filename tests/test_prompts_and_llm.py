@@ -52,7 +52,8 @@ class TestPrompts(unittest.TestCase):
             task_description="Review everything.",
             context_text="CTX",
             auditors=auditors,
-            initial_reviews={"Auditor1": "Some review"},
+            initial_reviews={"Auditor1": "Initial review"},
+            latest_reviews={"Auditor1": "Latest review"},
             qa_history=[],
             max_queries=3,
             query_count=1,
@@ -61,6 +62,8 @@ class TestPrompts(unittest.TestCase):
         )
         self.assertIn("ArbiterX", prompt)
         self.assertIn("Auditor1", prompt)
+        self.assertIn("Initial reviews from each auditor", prompt)
+        self.assertIn("Latest cross-checked reviews", prompt)
         self.assertIn("hard limit of 3 clarification questions", prompt)
         self.assertIn("NEEDS HUMAN REVIEW", prompt)
 
