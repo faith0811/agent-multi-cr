@@ -163,8 +163,6 @@ def run_pipeline(
     arbiter_family: str,
     max_queries: int,
     base_workdir: str,
-    max_context_files: int,
-    max_context_bytes_per_file: int,
     verbose: bool = False,
     output_lang: str = "zh",
     include_p2_p3: bool = False,
@@ -219,8 +217,6 @@ def run_pipeline(
         context_mode=context_mode,
         use_cached=use_cached,
         repo_root=repo_root,
-        max_context_files=max_context_files,
-        max_context_bytes_per_file=max_context_bytes_per_file,
     )
     print(f"  ✓ Context ready ({len(context_text):,} characters).\n", flush=True)
 
@@ -256,7 +252,6 @@ def run_pipeline(
     def _progress_reporter() -> None:
         import sys
 
-        nonlocal start_time
         last_len = 0
         # Emit a progress snapshot every 5 seconds until the run finishes.
         if stop_progress.wait(5.0):
@@ -636,4 +631,3 @@ def run_pipeline(
     sys.stderr.flush()
 
     return "".join(parts).strip()
-

@@ -1,6 +1,58 @@
 from textwrap import dedent
 
 
+def _memo_json_footer(extra_append_clause: str) -> str:
+    """
+    Shared instructions for how reviewers should emit MEMO_JSON so that updates
+    stay consistent across all prompt builders.
+    """
+    return f"""
+    At the very end of your answer, on a separate line, add:
+
+    MEMO_JSON: {{"append": "...", "overwrite": false}}
+
+    - `append` should contain any additional private notes you want to keep for yourself{extra_append_clause}
+    - If `overwrite` is true, your existing memo will be replaced with `append`.
+      Otherwise, `append` will be appended to your existing memo.
+    """
+
+
+def _shared_issue_format_guidelines() -> str:
+    """
+    Shared P0–P3 output format guidelines for reviewer prompts.
+    """
+    return """
+    - Use valid Markdown.
+    - Start with a one-sentence overall summary.
+    - Then organize findings into four sections with these exact headings:
+      - `P0 issues` – critical / blocking, must be fixed before merge.
+      - `P1 issues` – important, should be fixed soon.
+      - `P2 issues` – normal, worthwhile improvements.
+      - `P3 issues` – minor / nice-to-have.
+    - Under each section, use a numbered list.
+      For each item include:
+        - short title
+        - approximate location (e.g., file or section, described in words is fine)
+        - description of the problem
+        - why it matters
+        - a concrete suggestion for how to fix or improve it
+        - if this item definitely needs a human to double-check, add
+          `(NEEDS HUMAN REVIEW)` at the end of the item.
+    """
+
+
+def _reviewer_identity_block(reviewer_name: str) -> str:
+    """
+    Shared intro describing the reviewer and read-only workspace constraints.
+    """
+    return f"""
+    You are **{reviewer_name}**, a senior code reviewer.
+
+    You are working in a read-only copy of this repository in your current workspace.
+    You **must not** modify real project files; your job is to analyze and comment only.
+    """
+
+
 def build_initial_review_prompt(
     reviewer_name: str,
     task_description: str,
@@ -8,11 +60,8 @@ def build_initial_review_prompt(
     memo_text: str,
 ) -> str:
     """Prompt used for the very first independent review."""
-    return dedent(f"""
-    You are **{reviewer_name}**, a senior code reviewer.
-
-    You are working in a read-only copy of this repository in your current workspace.
-    You **must not** modify real project files; your job is to analyze and comment only.
+    body = f"""
+    {_reviewer_identity_block(reviewer_name)}
 
     The coordinator gives you this task:
 
@@ -49,32 +98,10 @@ def build_initial_review_prompt(
       call that out.
 
     Output format (strict):
-    - Use valid Markdown.
-    - Start with a one-sentence overall summary.
-    - Then organize findings into four sections with these exact headings:
-      - `P0 issues` – critical / blocking, must be fixed before merge.
-      - `P1 issues` – important, should be fixed soon.
-      - `P2 issues` – normal, worthwhile improvements.
-      - `P3 issues` – minor / nice-to-have.
-    - Under each section, use a numbered list.
-      For each item include:
-        - short title
-        - approximate location (e.g., file or section, described in words is fine)
-        - description of the problem
-        - why it matters
-        - a concrete suggestion for how to fix or improve it
-        - if this item *definitely* needs a human to double-check, add
-          `(NEEDS HUMAN REVIEW)` at the end of the item.
-
-    At the very end of your answer, on a separate line, add:
-
-    MEMO_JSON: {{"append": "...", "overwrite": false}}
-
-    - `append` should contain any additional private notes you want to keep for yourself
-      (or an empty string if you have nothing to add).
-    - If `overwrite` is true, your existing memo will be replaced with `append`.
-      Otherwise, `append` will be appended to your existing memo.
-    """).strip()
+    {_shared_issue_format_guidelines()}
+    """
+    footer = _memo_json_footer(" (or an empty string if you have nothing to add).")
+    return dedent(body + footer).strip()
 
 
 def build_peer_review_prompt(
@@ -93,11 +120,8 @@ def build_peer_review_prompt(
     This is where reviewers reconcile disagreements among themselves before
     the arbiter aggregates the final result.
     """
-    return dedent(f"""
-    You are **{reviewer_name}**, a senior code reviewer.
-
-    You are working in a read-only copy of this repository in your current workspace.
-    You **must not** modify real project files; your job is to analyze and comment only.
+    body = f"""
+    {_reviewer_identity_block(reviewer_name)}
 
     The coordinator gave you this task:
 
@@ -147,34 +171,14 @@ def build_peer_review_prompt(
       opinion, organized by P0–P3 just like your initial review.
 
     Output format (same as your initial review, but updated):
-    - Use valid Markdown.
-    - Start with a one-sentence overall summary.
-    - Then organize findings into four sections with these exact headings:
-      - `P0 issues` – critical / blocking, must be fixed before merge.
-      - `P1 issues` – important, should be fixed soon.
-      - `P2 issues` – normal, worthwhile improvements.
-      - `P3 issues` – minor / nice-to-have.
-    - Under each section, use a numbered list.
-      For each item include:
-        - short title
-        - approximate location (file / function, described in words is fine)
-        - description of the problem
-        - why it matters
-        - a concrete suggestion for how to fix or improve it
-        - if this item definitely needs a human to double-check, add
-          `(NEEDS HUMAN REVIEW)` at the end of the item.
+    {_shared_issue_format_guidelines()}
     - When you reference agreement or disagreement with others, do it briefly in
       the text (e.g., "Other reviewers agree that ...", "I disagree with ...").
-
-    At the very end of your answer, on a separate line, add:
-
-    MEMO_JSON: {{"append": "...", "overwrite": false}}
-
-    - `append` should contain any additional private notes you want to keep for yourself
-      based on this cross-check (or an empty string if you have nothing to add).
-    - If `overwrite` is true, your existing memo will be replaced with `append`.
-      Otherwise, `append` will be appended to your existing memo.
-    """).strip()
+    """
+    footer = _memo_json_footer(
+        " based on this cross-check (or an empty string if you have nothing to add)."
+    )
+    return dedent(body + footer).strip()
 
 
 def build_followup_prompt(
@@ -187,11 +191,8 @@ def build_followup_prompt(
     memo_text: str,
 ) -> str:
     """Prompt used when the arbiter asks a reviewer a follow-up question."""
-    return dedent(f"""
-    You are **{reviewer_name}**, a senior code reviewer.
-
-    You are working in a read-only copy of this repository in your current workspace.
-    You **must not** modify real project files; your job is to analyze and comment only.
+    body = f"""
+    {_reviewer_identity_block(reviewer_name)}
 
     The coordinator originally gave you this task:
 
@@ -251,16 +252,11 @@ def build_followup_prompt(
         - P3 – minor / nice-to-have.
 
     Respond in **English** using Markdown.
-
-    At the very end of your answer, on a separate line, add:
-
-    MEMO_JSON: {{"append": "...", "overwrite": false}}
-
-    - `append` should contain any additional private notes you want to keep for yourself
-      based on this Q&A (or an empty string if you have nothing to add).
-    - If `overwrite` is true, your existing memo will be replaced with `append`.
-      Otherwise, `append` will be appended to your existing memo.
-    """).strip()
+    """
+    footer = _memo_json_footer(
+        " based on this Q&A (or an empty string if you have nothing to add)."
+    )
+    return dedent(body + footer).strip()
 
 
 def build_arbiter_prompt(

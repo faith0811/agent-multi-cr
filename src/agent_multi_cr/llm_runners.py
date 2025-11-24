@@ -10,18 +10,6 @@ from .prompts import (
 from .shell_utils import run_shell
 
 
-def _run_with_heartbeat(label: str, fn, *args, **kwargs) -> str:
-    """
-    Wrapper around a long-lived LLM call.
-
-    The global progress reporter in the pipeline already provides periodic
-    feedback, so this function simply delegates to `fn` without emitting
-    additional per-call logs to avoid noisy output.
-    """
-    _ = label  # label kept for future debugging if needed
-    return fn(*args, **kwargs)
-
-
 def run_codex(auditor: Auditor, prompt: str) -> str:
     """
     Call Codex CLI in non-interactive mode for a given auditor.
@@ -93,9 +81,9 @@ def run_auditor_initial_review(
         sys.stderr.flush()
     try:
         if auditor.kind == "codex":
-            raw = _run_with_heartbeat(label, run_codex, auditor, prompt)
+            raw = run_codex(auditor, prompt)
         elif auditor.kind == "gemini":
-            raw = _run_with_heartbeat(label, run_gemini, auditor, prompt)
+            raw = run_gemini(auditor, prompt)
         else:
             raise ValueError(f"Unknown auditor kind: {auditor.kind}")
     except Exception as e:
@@ -144,9 +132,9 @@ def run_auditor_followup(
         sys.stderr.flush()
     try:
         if auditor.kind == "codex":
-            raw = _run_with_heartbeat(label, run_codex, auditor, prompt)
+            raw = run_codex(auditor, prompt)
         elif auditor.kind == "gemini":
-            raw = _run_with_heartbeat(label, run_gemini, auditor, prompt)
+            raw = run_gemini(auditor, prompt)
         else:
             raise ValueError(f"Unknown auditor kind: {auditor.kind}")
     except Exception as e:
@@ -196,9 +184,9 @@ def run_reviewer_peer_round(
         sys.stderr.flush()
     try:
         if auditor.kind == "codex":
-            raw = _run_with_heartbeat(label, run_codex, auditor, prompt)
+            raw = run_codex(auditor, prompt)
         elif auditor.kind == "gemini":
-            raw = _run_with_heartbeat(label, run_gemini, auditor, prompt)
+            raw = run_gemini(auditor, prompt)
         else:
             raise ValueError(f"Unknown auditor kind: {auditor.kind}")
     except Exception as e:
@@ -284,9 +272,9 @@ def run_arbiter_step(
         sys.stderr.flush()
 
     if arbiter.kind == "codex":
-        raw = _run_with_heartbeat(label, run_codex, arbiter, prompt)
+        raw = run_codex(arbiter, prompt)
     elif arbiter.kind == "gemini":
-        raw = _run_with_heartbeat(label, run_gemini, arbiter, prompt)
+        raw = run_gemini(arbiter, prompt)
     else:
         raise ValueError(f"Unknown arbiter kind: {arbiter.kind}")
 

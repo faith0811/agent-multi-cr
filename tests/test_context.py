@@ -24,8 +24,6 @@ class TestContextHelpers(unittest.TestCase):
                 context_mode="unknown",
                 use_cached=False,
                 repo_root=".",
-                max_context_files=10,
-                max_context_bytes_per_file=1000,
             )
 
 

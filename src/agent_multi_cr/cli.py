@@ -10,7 +10,7 @@ def main() -> None:
             "Multi-model code review using Codex (multiple models) + Gemini, "
             "with an arbiter that can iteratively query individual reviewers. "
             "You specify the review task in free-form English, and choose the context "
-            "(git diff, repo snapshot, or stdin). Each auditor gets its own private "
+            "(git diff, repo, or stdin). Each auditor gets its own private "
             "working directory and memo."
         ),
     )
@@ -138,8 +138,6 @@ def main() -> None:
         arbiter_family=args.arbiter_family,
         max_queries=args.max_queries,
         base_workdir=args.auditors_workdir,
-        max_context_files=40,
-        max_context_bytes_per_file=4000,
         verbose=args.verbose,
         output_lang=args.output_lang,
         include_p2_p3=args.include_p2_p3,
@@ -147,4 +145,3 @@ def main() -> None:
     )
 
     print(result)
-
