@@ -69,14 +69,15 @@ def resolve_context_text(
         )
     if context_mode == "repo":
         # Do not inline a full repository snapshot; Codex/Gemini CLIs can read
-        # files directly from the working directory. We only provide a brief
-        # textual description so the models know how to interpret their tools.
-        root_abs = os.path.abspath(repo_root)
+        # files directly from their working directory. We only provide a brief
+        # textual description so the models know how to interpret their tools,
+        # without exposing the user's real filesystem paths.
         return (
-            f"CONTEXT_MODE: repo\n"
-            f"The code under review is the repository at {root_abs}. "
-            "You have access to these files via your tools; inspect whatever "
-            "you need directly from disk instead of relying on inlined code."
+            "CONTEXT_MODE: repo\n"
+            "The code under review is the repository available in your current "
+            "working directory. You have access to these files via your tools; "
+            "inspect whatever you need directly from disk instead of relying "
+            "on inlined code."
         )
     if context_mode == "stdin":
         # For stdin, we *do* pass through the text because it may be an

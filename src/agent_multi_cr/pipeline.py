@@ -21,19 +21,215 @@ from .llm_runners import (
 
 WORKDIR_MARKER = ".agent_multi_cr_workspace"
 
-_CLEANUP_RUN_WORKDIRS: List[str] = []
+# Track per-run workdirs plus their associated repo roots so that both normal
+# cleanup and atexit handlers can safely remove any git worktrees and
+# temporary directories without affecting unrelated paths.
+_CLEANUP_RUN_WORKDIRS: List[Tuple[str, str]] = []
 _ATEEXIT_REGISTERED = False
+
+
+def _is_git_repo(path: str) -> bool:
+    """Best-effort check for whether path looks like a git repository root."""
+    git_dir = os.path.join(path, ".git")
+    return os.path.isdir(git_dir)
+
+
+def _unique_slug(name: str, used: Dict[str, str]) -> str:
+    """
+    Generate a filesystem-safe slug that is unique for this run.
+
+    If different auditor names would map to the same slug (after slugify),
+    append a numeric suffix (-2, -3, ...) to avoid collisions and keep their
+    workdirs/memos separate.
+    """
+    base = slugify(name)
+    if not base:
+        base = "auditor"
+    slug = base
+    counter = 2
+    while slug in used.values():
+        slug = f"{base}-{counter}"
+        counter += 1
+    used[name] = slug
+    return slug
+
+
+def _run_git(
+    args: List[str],
+    *,
+    cwd: str,
+    check: bool = True,
+    capture_output: bool = False,
+    input_text: Optional[str] = None,
+) -> subprocess.CompletedProcess:
+    """Small wrapper around git subprocess invocation."""
+    cmd = ["git"] + args
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=cwd,
+            input=input_text,
+            text=True,
+            capture_output=capture_output,
+        )
+    except Exception as exc:  # pragma: no cover - very unlikely in normal use
+        raise SystemExit(f"Failed to run {' '.join(cmd)}: {exc}")
+
+    if check and result.returncode != 0:
+        raise SystemExit(
+            f"git command failed with exit code {result.returncode}: {' '.join(cmd)}\n"
+            f"stdout:\n{result.stdout}\n\nstderr:\n{result.stderr}"
+        )
+    return result
+
+
+def _git_diff_patch(repo_root: str, use_cached: bool) -> str:
+    """
+    Return a unified diff patch for the current repo state.
+
+    The patch is produced via `git diff` (or `git diff --cached`) and may be
+    empty if there are no differences. We rely on the context preparation
+    step to enforce "diff must exist" when context_mode == diff.
+    """
+    args = ["diff", "--cached"] if use_cached else ["diff"]
+    result = _run_git(args, cwd=repo_root, check=False, capture_output=True)
+
+    # git diff exit codes:
+    #   0 -> no differences
+    #   1 -> differences found
+    #  >1 -> error
+    if result.returncode not in (0, 1):
+        raise SystemExit(
+            f"git diff exited with status {result.returncode}; "
+            "are you running inside a git repository?"
+        )
+    return result.stdout or ""
+
+
+def _create_worktree(
+    repo_root: str,
+    worktree_path: str,
+    base_ref: str,
+) -> None:
+    """Create a detached git worktree at the given path."""
+    os.makedirs(os.path.dirname(worktree_path), exist_ok=True)
+    # Use --detach so the worktree is not tied to a branch.
+    _run_git(
+        ["worktree", "add", "--detach", worktree_path, base_ref],
+        cwd=repo_root,
+        check=True,
+        capture_output=False,
+    )
+
+
+def _apply_patch_to_worktree(
+    worktree_path: str,
+    patch_text: str,
+    *,
+    apply_to_index: bool,
+) -> None:
+    """
+    Apply a diff patch to a worktree.
+
+    When apply_to_index is True, use `git apply --index` so that staged diffs
+    (`git diff --cached`) inside the worktree reflect the original repo's
+    staged changes. Otherwise we only modify the working tree (`git diff`).
+    """
+    if not patch_text.strip():
+        return
+
+    args = ["apply", "--index"] if apply_to_index else ["apply"]
+    result = _run_git(
+        args,
+        cwd=worktree_path,
+        check=False,
+        capture_output=True,
+        input_text=patch_text,
+    )
+    if result.returncode != 0:
+        # If patch application fails, we still want the run to continue, but
+        # we surface a warning so the user can investigate.
+        sys.stderr.write(
+            "Warning: failed to apply git diff patch in auditor worktree.\n"
+            f"cwd: {worktree_path}\n"
+            f"stdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}\n"
+        )
+        sys.stderr.flush()
+
+
+def _remove_worktrees_under(repo_root: str, parent_path: str) -> None:
+    """
+    Best-effort removal of any git worktrees whose paths live under parent_path.
+    """
+    parent_real = os.path.realpath(parent_path)
+    try:
+        result = _run_git(
+            ["worktree", "list", "--porcelain"],
+            cwd=repo_root,
+            check=False,
+            capture_output=True,
+        )
+    except SystemExit:
+        # Not a git repo or git missing; nothing to do.
+        return
+
+    current_worktree: Optional[str] = None
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("worktree "):
+            current_worktree = line.split(" ", 1)[1]
+            wt_real = os.path.realpath(current_worktree)
+            if wt_real == parent_real or wt_real.startswith(parent_real + os.sep):
+                # Best-effort removal; ignore failures.
+                try:
+                    _run_git(
+                        ["worktree", "remove", "--force", current_worktree],
+                        cwd=repo_root,
+                        check=False,
+                        capture_output=True,
+                    )
+                except SystemExit:
+                    pass
+            current_worktree = None
+
+
+def _cleanup_run_workdir(path: str, repo_root: Optional[str]) -> None:
+    """
+    Remove an auditor run workdir tree and any associated git worktrees.
+
+    Errors are logged but do not abort the main process so that a single
+    failure does not prevent overall cleanup.
+    """
+    if repo_root:
+        try:
+            _remove_worktrees_under(repo_root, path)
+        except Exception as exc:  # pragma: no cover - very unlikely
+            sys.stderr.write(
+                f"Warning: failed to remove git worktrees under {path}: {exc}\n"
+            )
+            sys.stderr.flush()
+
+    try:
+        shutil.rmtree(path)
+    except FileNotFoundError:
+        return
+    except Exception as exc:
+        sys.stderr.write(
+            f"Warning: failed to remove auditors workdir '{path}': {exc}\n"
+        )
+        sys.stderr.flush()
 
 
 def _atexit_cleanup_run_workdirs() -> None:
     """Best-effort cleanup for any leftover per-run workdirs on process exit."""
-    for path in list(_CLEANUP_RUN_WORKDIRS):
+    for path, repo_root in list(_CLEANUP_RUN_WORKDIRS):
         if os.path.isdir(path):
             marker = os.path.join(path, WORKDIR_MARKER)
             if os.path.exists(marker):
-                _cleanup_workdir(path)
+                _cleanup_run_workdir(path, repo_root)
         try:
-            _CLEANUP_RUN_WORKDIRS.remove(path)
+            _CLEANUP_RUN_WORKDIRS.remove((path, repo_root))
         except ValueError:
             pass
 
@@ -94,79 +290,20 @@ def _copy_repo_into_workdir(repo_root: str, workdir: str, include_git: bool) -> 
     ignore_patterns.extend(extra_exclude_patterns)
 
     pattern_ignore = shutil.ignore_patterns(*ignore_patterns)
-    git_dir = os.path.join(repo_root, ".git")
-    has_git = os.path.isdir(git_dir)
-
-    # Bound the number of git check-ignore subprocesses so large repositories do
-    # not spawn an excessive number of short-lived processes. The limit can be
-    # tuned via AGENT_MULTI_CR_GIT_CHECK_IGNORE_LIMIT (default: 200).
-    limit_env = os.environ.get("AGENT_MULTI_CR_GIT_CHECK_IGNORE_LIMIT")
-    try:
-        git_check_ignore_limit = int(limit_env) if limit_env is not None else 200
-    except ValueError:
-        git_check_ignore_limit = 200
-    git_check_ignore_used = 0
 
     def ignore(dirpath: str, names: List[str]) -> List[str]:
-        nonlocal git_check_ignore_used
-        # Start with pattern-based ignores.
+        # Start with pattern-based ignores only. For non-git directories we do
+        # not attempt to apply .gitignore semantics here.
         ignored = set(pattern_ignore(dirpath, names))
 
-        # If not a git repo or the limit for git check-ignore calls is exhausted,
-        # we are done. The pattern-based ignores still apply.
-        if not has_git or git_check_ignore_limit <= 0 or git_check_ignore_used >= git_check_ignore_limit:
-            return list(ignored)
-
-        # Identify candidates that are NOT yet ignored by patterns or already skipped
-        candidates = [n for n in names if n not in ignored]
-        if not candidates:
-            return list(ignored)
-
-        # Build relative paths for git check-ignore
-        rel_dir = os.path.relpath(dirpath, repo_root)
-        check_map = {}
-        for name in candidates:
+        # Never follow symlinks; skip them entirely to avoid copying arbitrary
+        # host files or creating recursive trees.
+        for name in list(names):
+            if name in ignored:
+                continue
             full_path = os.path.join(dirpath, name)
-            # Never follow symlinks; skip them entirely to avoid copying
-            # arbitrary host files or creating recursive trees.
             if os.path.islink(full_path):
                 ignored.add(name)
-                continue
-            path = os.path.join(rel_dir, name) if rel_dir != "." else name
-            check_map[path] = name
-
-        if not check_map:
-            return list(ignored)
-
-        # Batch check using git check-ignore --stdin -z
-        # -z uses NUL as terminator for input and output
-        try:
-            git_check_ignore_used += 1
-            proc = subprocess.Popen(
-                ["git", "check-ignore", "--stdin", "-z"],
-                cwd=repo_root,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-            )
-            input_data = "\0".join(check_map.keys()) + "\0"
-            stdout, _ = proc.communicate(input_data.encode("utf-8"))
-
-            if proc.returncode in (0, 1):
-                # 0 = some ignored, 1 = none ignored (but command ran ok)
-                # stdout contains the paths that ARE ignored, NUL-separated
-                ignored_paths = stdout.split(b"\0")
-                for ip in ignored_paths:
-                    if not ip:
-                        continue
-                    ip_str = ip.decode("utf-8")
-                    # We sent relative paths, we get back relative paths (or absolute if we sent abs?)
-                    # git check-ignore usually echoes the input format.
-                    if ip_str in check_map:
-                        ignored.add(check_map[ip_str])
-        except Exception:
-            # If git fails, fall back to copying (safe default)
-            pass
 
         return list(ignored)
 
@@ -177,11 +314,6 @@ def _copy_repo_into_workdir(repo_root: str, workdir: str, include_git: bool) -> 
         dirs_exist_ok=True,
         ignore=ignore,
     )
-
-
-def _cleanup_workdir(path: str) -> None:
-    """Remove an auditors workdir tree."""
-    shutil.rmtree(path)
 
 
 def run_pipeline(
@@ -231,7 +363,7 @@ def run_pipeline(
 
     # Track this run's workdir for best-effort cleanup on process exit.
     global _ATEEXIT_REGISTERED
-    _CLEANUP_RUN_WORKDIRS.append(run_workdir_abs)
+    _CLEANUP_RUN_WORKDIRS.append((run_workdir_abs, repo_root))
     if not _ATEEXIT_REGISTERED:
         atexit.register(_atexit_cleanup_run_workdirs)
         _ATEEXIT_REGISTERED = True
@@ -246,7 +378,7 @@ def run_pipeline(
                 "Please choose a different path or remove it manually if you are sure "
                 "it is safe."
             )
-        _cleanup_workdir(run_workdir_abs)
+        _cleanup_run_workdir(run_workdir_abs, repo_root)
     print("  ✓ Run workdir ready.\n", flush=True)
 
     print(f"▶ Preparing context (mode={context_mode}, repo_root={repo_root})...", flush=True)
@@ -304,6 +436,9 @@ def run_pipeline(
     reporter_thread.start()
 
     auditors: List[Auditor] = []
+    # Map from human-readable auditor/arbiter names to their unique slugs
+    # for this run, so that collisions are avoided.
+    slug_map: Dict[str, str] = {}
 
     # Determine Codex configs used for reviewers vs arbiter.
     arbiter: Optional[Auditor] = None
@@ -328,7 +463,8 @@ def run_pipeline(
         arb_model = "gpt-5.1-codex"
         arb_effort = "low"
         arbiter_name = f"Codex[{arb_model}|{arb_effort}]"
-        arbiter_workdir = os.path.join(run_workdir_abs, slugify(f"Arbiter-{arbiter_name}"))
+        arbiter_slug = _unique_slug(f"Arbiter-{arbiter_name}", slug_map)
+        arbiter_workdir = os.path.join(run_workdir_abs, arbiter_slug)
         # Arbiter workspace intentionally does NOT contain the repo copy; it should
         # base decisions only on reviewers' messages and Q&A, not on direct code access.
         os.makedirs(arbiter_workdir, exist_ok=True)
@@ -345,24 +481,68 @@ def run_pipeline(
     with progress_lock:
         progress["auditors_total"] = total_planned_auditors
 
+    # Prepare git-based view of the repository, if available. For non-git
+    # directories we fall back to a plain copy.
+    has_git = _is_git_repo(repo_root)
+    # For repo/stdin modes, always reflect the current working tree diff
+    # (tracked files) in the auditors' views. For diff mode we also compute
+    # the appropriate patch so that tools like `git diff`/`git diff --cached`
+    # inside the worktree see the expected changes.
+    repo_diff_patch = ""
+    diff_mode_patch = ""
+    if has_git:
+        try:
+            repo_diff_patch = _git_diff_patch(repo_root, use_cached=False)
+        except SystemExit:
+            repo_diff_patch = ""
+        if context_mode == "diff":
+            try:
+                diff_mode_patch = _git_diff_patch(repo_root, use_cached=use_cached)
+            except SystemExit:
+                diff_mode_patch = ""
+
     # Set up Codex auditors (excluding arbiter-only config when arbiter_family=codex)
     for idx, (model_name, effort) in enumerate(codex_auditor_configs, start=1):
         name = f"Codex[{model_name}|{effort}]"
-        slug = slugify(name)
+        slug = _unique_slug(name, slug_map)
         workdir = os.path.join(run_workdir_abs, slug)
         memo_root = os.path.join(base_workdir_abs, "memos", slug)
         print(f"▶ Setting up auditor {idx}/{total_planned_auditors}: {name}", flush=True)
-        _copy_repo_into_workdir(
-            repo_root=repo_root,
-            workdir=workdir,
-            include_git=context_mode == "diff",
-        )
+        if has_git:
+            worktree_repo = os.path.join(workdir, "repo")
+            _create_worktree(repo_root=repo_root, worktree_path=worktree_repo, base_ref="HEAD")
+            # For repo and stdin modes, reflect the current working tree diff
+            # (tracked files) so auditors see the same code as in the user's
+            # working directory. For diff mode, use a patch that matches the
+            # requested diff semantics.
+            if context_mode in ("repo", "stdin"):
+                _apply_patch_to_worktree(
+                    worktree_path=worktree_repo,
+                    patch_text=repo_diff_patch,
+                    apply_to_index=False,
+                )
+            elif context_mode == "diff":
+                _apply_patch_to_worktree(
+                    worktree_path=worktree_repo,
+                    patch_text=diff_mode_patch,
+                    apply_to_index=use_cached,
+                )
+            # The auditor's workdir is the worktree root so that tools run
+            # directly inside the repo view.
+            auditor_workdir = worktree_repo
+        else:
+            _copy_repo_into_workdir(
+                repo_root=repo_root,
+                workdir=workdir,
+                include_git=context_mode == "diff",
+            )
+            auditor_workdir = workdir
         auditors.append(
             Auditor(
                 name=name,
                 kind="codex",
                 model_name=model_name,
-                workdir=workdir,
+                workdir=auditor_workdir,
                 reasoning_effort=effort,
                 memo_root=memo_root,
             )
@@ -371,20 +551,38 @@ def run_pipeline(
     # Set up Gemini auditor reviewer.
     gemini_index = total_planned_auditors
     gemini_name = f"Gemini[{gemini_model}]"
-    gemini_slug = slugify(gemini_name)
+    gemini_slug = _unique_slug(gemini_name, slug_map)
     gemini_workdir = os.path.join(run_workdir_abs, gemini_slug)
     gemini_memo_root = os.path.join(base_workdir_abs, "memos", gemini_slug)
     print(f"▶ Setting up auditor {gemini_index}/{total_planned_auditors}: {gemini_name}", flush=True)
-    _copy_repo_into_workdir(
-        repo_root=repo_root,
-        workdir=gemini_workdir,
-        include_git=context_mode == "diff",
-    )
+    if has_git:
+        gemini_repo = os.path.join(gemini_workdir, "repo")
+        _create_worktree(repo_root=repo_root, worktree_path=gemini_repo, base_ref="HEAD")
+        if context_mode in ("repo", "stdin"):
+            _apply_patch_to_worktree(
+                worktree_path=gemini_repo,
+                patch_text=repo_diff_patch,
+                apply_to_index=False,
+            )
+        elif context_mode == "diff":
+            _apply_patch_to_worktree(
+                worktree_path=gemini_repo,
+                patch_text=diff_mode_patch,
+                apply_to_index=use_cached,
+            )
+        gemini_workdir_final = gemini_repo
+    else:
+        _copy_repo_into_workdir(
+            repo_root=repo_root,
+            workdir=gemini_workdir,
+            include_git=context_mode == "diff",
+        )
+        gemini_workdir_final = gemini_workdir
     gemini_auditor = Auditor(
         name=gemini_name,
         kind="gemini",
         model_name=gemini_model,
-        workdir=gemini_workdir,
+        workdir=gemini_workdir_final,
         reasoning_effort=None,
         memo_root=gemini_memo_root,
     )
@@ -393,7 +591,8 @@ def run_pipeline(
     # If Gemini acts as arbiter, give it its own isolated workspace without a repo copy.
     if arbiter_family == "gemini":
         arbiter_name = f"Gemini-Arbiter[{gemini_model}]"
-        arbiter_workdir = os.path.join(run_workdir_abs, slugify(arbiter_name))
+        arbiter_slug = _unique_slug(arbiter_name, slug_map)
+        arbiter_workdir = os.path.join(run_workdir_abs, arbiter_slug)
         os.makedirs(arbiter_workdir, exist_ok=True)
         arbiter = Auditor(
             name=arbiter_name,
@@ -633,7 +832,10 @@ def run_pipeline(
     if output_lang == "zh":
         try:
             print("\n▶ Translating final report to Chinese...\n", flush=True)
-            final_markdown = translate_markdown_to_zh(final_markdown)
+            final_markdown = translate_markdown_to_zh(
+                final_markdown,
+                cwd=run_workdir_abs,
+            )
         except Exception as exc:
             sys.stderr.write(f"Translation to Chinese failed: {exc}\n")
             sys.stderr.flush()
@@ -643,7 +845,7 @@ def run_pipeline(
     if os.path.isdir(run_workdir_abs):
         marker_path = os.path.join(run_workdir_abs, WORKDIR_MARKER)
         if os.path.exists(marker_path):
-            _cleanup_workdir(run_workdir_abs)
+            _cleanup_run_workdir(run_workdir_abs, repo_root)
             print("  ✓ Run auditors workdir removed.\n", flush=True)
         else:
             print(
@@ -654,7 +856,7 @@ def run_pipeline(
     # This run's workdir has been cleaned up (or left in place intentionally);
     # drop it from the global cleanup list to avoid unbounded growth.
     try:
-        _CLEANUP_RUN_WORKDIRS.remove(run_workdir_abs)
+        _CLEANUP_RUN_WORKDIRS.remove((run_workdir_abs, repo_root))
     except ValueError:
         pass
 

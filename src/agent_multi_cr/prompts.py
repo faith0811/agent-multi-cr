@@ -50,8 +50,11 @@ def _reviewer_identity_block(reviewer_name: str) -> str:
     return f"""
     You are **{reviewer_name}**, a senior code reviewer.
 
-    You are working in a read-only copy of this repository in your current workspace.
-    You **must not** modify real project files; your job is to analyze and comment only.
+    You are working in an isolated workspace derived from this repository.
+    You may make temporary changes **inside this workspace only** to understand the
+    code (for example, applying patches or experimenting with local merges while
+    staying on a detached HEAD). Your job is to analyze and comment; you must not
+    update or create any shared branches or push changes to remotes.
     """
 
 
@@ -61,8 +64,20 @@ def _shared_repo_context_block() -> str:
     """
     return """
     The code under review lives in the files in your current working directory
-    (a copy of the repository). You can and should use your tools (search,
-    file inspection, git commands, etc.) to examine any code you need.
+    (a worktree derived from the repository). You can and should use your tools
+    (search, file inspection, git commands, etc.) to examine any code you need.
+
+    IMPORTANT SAFETY RULES:
+    - This workspace is a throwaway view; you may make temporary local changes
+      here (including `git apply` or `git merge`), but you must treat them as
+      experimental only.
+    - You must **not** update or create any named branches or push changes.
+      Concretely:
+        - Do not run: `git checkout <branch>`, `git branch -f`, `git push`,
+          `git reset --hard <branch>`, or similar operations that move branch
+          pointers or affect remotes.
+        - If you run `git merge`, do it only while `HEAD` is detached and treat
+          the result as temporary; do not write commits onto a named branch.
     """
 
 

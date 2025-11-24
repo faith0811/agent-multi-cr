@@ -284,7 +284,7 @@ def run_arbiter_step(
     return parse_arbiter_json(raw)
 
 
-def translate_markdown_to_zh(markdown: str) -> str:
+def translate_markdown_to_zh(markdown: str, *, cwd: Optional[str] = None) -> str:
     """
     Translate a Markdown code review into Simplified Chinese using Codex CLI.
 
@@ -313,6 +313,9 @@ def translate_markdown_to_zh(markdown: str) -> str:
 
     # For translation we do not need repo search, so we disable it.
     cmd = _build_codex_cmd(model_name="gpt-5.1", reasoning_effort=None, search=False)
-    # Use current working directory; translation does not depend on repo files.
+    # Use a provided cwd (typically the run workdir) instead of the real repo
+    # root so that translation runs inside the same sandboxed environment as
+    # the auditors. Translation does not depend on repo files.
     # Timeout is controlled by AGENT_MULTI_CR_SHELL_TIMEOUT_SEC or the default.
-    return run_shell(cmd, input_text=prompt, cwd=os.getcwd())
+    effective_cwd = cwd or os.getcwd()
+    return run_shell(cmd, input_text=prompt, cwd=effective_cwd)
