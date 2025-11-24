@@ -86,7 +86,3 @@ class TestParseArbiterJson(unittest.TestCase):
         parsed = parse_arbiter_json(raw)
         self.assertEqual(parsed["state"], "final")
         self.assertEqual(parsed["final_markdown"], raw)
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -35,11 +35,11 @@ def memo_path(auditor: Auditor) -> str:
 def load_memo(auditor: Auditor) -> str:
     """Load memo text for an auditor (private)."""
     path = memo_path(auditor)
-    if not os.path.exists(path):
-        return ""
     try:
         with open(path, "r", encoding="utf-8") as f:
             return f.read()
+    except FileNotFoundError:
+        return ""
     except Exception:
         return ""
 

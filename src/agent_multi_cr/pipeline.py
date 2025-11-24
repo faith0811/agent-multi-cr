@@ -180,9 +180,8 @@ def _copy_repo_into_workdir(repo_root: str, workdir: str, include_git: bool) -> 
 
 
 def _cleanup_workdir(path: str) -> None:
-    """Remove an existing auditors workdir tree, if present."""
-    if os.path.isdir(path):
-        shutil.rmtree(path)
+    """Remove an auditors workdir tree."""
+    shutil.rmtree(path)
 
 
 def run_pipeline(
@@ -452,11 +451,6 @@ def run_pipeline(
                 flush=True,
             )
 
-    # Preserve the original initial reviews for the arbiter so it can
-    # distinguish between issues that were first proposed in an initial
-    # review vs. those adopted later during peer reconciliation.
-    raw_initial_reviews: Dict[str, str] = dict(initial_reviews)
-
     # Reviewer cross-check round before arbiter aggregation: each reviewer sees
     # others' initial reviews once and updates their own view.
     print("\n▶ Round 2: reviewers cross-check each other...\n", flush=True)
@@ -471,7 +465,7 @@ def run_pipeline(
             parts.append(f'<REVIEW name="{name}">\n{review}\n</REVIEW>')
         return "\n\n".join(parts)
 
-    updated_reviews: Dict[str, str] = {}
+    latest_reviews: Dict[str, str] = {}
     with ThreadPoolExecutor(max_workers=num_auditors or 1) as executor:
         future_to_auditor = {}
         for auditor in auditors:
@@ -495,12 +489,8 @@ def run_pipeline(
             except Exception as exc:
                 print(f"    ✗ {auditor.name} peer round failed: {exc}", flush=True)
                 raise
-            updated_reviews[auditor.name] = review
+            latest_reviews[auditor.name] = review
             print(f"    ✓ Peer cross-check finished for {auditor.name}.", flush=True)
-
-    # The arbiter will see both the original initial reviews and the latest
-    # cross-checked reviews as its primary input.
-    latest_reviews: Dict[str, str] = updated_reviews
 
     qa_history: List[Dict[str, str]] = []
     query_count = 0
@@ -516,7 +506,7 @@ def run_pipeline(
             task_description=task_description,
             context_text=context_text,
             auditors=auditors,
-            initial_reviews=raw_initial_reviews,
+            initial_reviews=initial_reviews,
             latest_reviews=latest_reviews,
             qa_history=qa_history,
             max_queries=max_queries_for_call,

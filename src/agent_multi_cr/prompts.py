@@ -55,6 +55,17 @@ def _reviewer_identity_block(reviewer_name: str) -> str:
     """
 
 
+def _shared_repo_context_block() -> str:
+    """
+    Shared description of the repository context in the auditor's workspace.
+    """
+    return """
+    The code under review lives in the files in your current working directory
+    (a copy of the repository). You can and should use your tools (search,
+    file inspection, git commands, etc.) to examine any code you need.
+    """
+
+
 def build_initial_review_prompt(
     reviewer_name: str,
     task_description: str,
@@ -71,9 +82,7 @@ def build_initial_review_prompt(
     {task_description}
     </REVIEW_TASK>
 
-    The code under review lives in the files in your current working directory
-    (a copy of the repository). You can and should use your tools (search,
-    file inspection, git commands, etc.) to examine any code you need.
+    {_shared_repo_context_block()}
 
     The coordinator also provides this extra text context (may be empty, a note,
     a diff, or other text):
@@ -129,9 +138,7 @@ def build_peer_review_prompt(
     {task_description}
     </REVIEW_TASK>
 
-    The code under review lives in the files in your current working directory
-    (a copy of the repository). You can and should use your tools (search,
-    file inspection, git commands, etc.) to examine any code you need.
+    {_shared_repo_context_block()}
 
     The coordinator also provides this extra text context (may be empty, a note,
     a diff, or other text):
@@ -200,9 +207,7 @@ def build_followup_prompt(
     {task_description}
     </REVIEW_TASK>
 
-    The code under review lives in the files in your current working directory
-    (a copy of the repository). You can and should use your tools (search,
-    file inspection, git commands, etc.) to examine any file you need.
+    {_shared_repo_context_block()}
 
     The coordinator also provides this extra text context (may be empty, a note,
     a diff, or other text):

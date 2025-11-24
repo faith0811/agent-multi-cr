@@ -6,7 +6,18 @@ The public API is intentionally minimal; most functionality is exposed via the
 call ``run_pipeline`` directly.
 """
 
-from .pipeline import run_pipeline
+
+def run_pipeline(*args, **kwargs):
+    """
+    Lazily import and invoke the main review pipeline.
+
+    This avoids importing the heavy pipeline module on package import,
+    which keeps ``import agent_multi_cr`` lightweight.
+    """
+    from .pipeline import run_pipeline as _run_pipeline
+
+    return _run_pipeline(*args, **kwargs)
+
 
 __all__ = [
     "run_pipeline",

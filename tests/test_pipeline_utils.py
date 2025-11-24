@@ -23,7 +23,3 @@ class TestPipelineUtils(unittest.TestCase):
         self.assertNotIn("Q2", snippet)
         self.assertNotIn("A2", snippet)
         self.assertIn("---", snippet)
-
-
-if __name__ == "__main__":
-    unittest.main()

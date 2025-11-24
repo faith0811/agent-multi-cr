@@ -25,7 +25,3 @@ class TestContextHelpers(unittest.TestCase):
                 use_cached=False,
                 repo_root=".",
             )
-
-
-if __name__ == "__main__":
-    unittest.main()

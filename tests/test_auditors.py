@@ -97,7 +97,3 @@ class TestMemoExtraction(unittest.TestCase):
             # Memo unchanged and MEMO_JSON line removed from cleaned output.
             self.assertEqual(new_memo, "")
             self.assertEqual(cleaned, "Line\nMore")
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 from typing import List, Optional
@@ -204,8 +205,6 @@ def run_reviewer_peer_round(
 
 def parse_arbiter_json(raw: str):
     """Parse arbiter response as JSON (best effort)."""
-    import json
-
     raw = raw.strip()
     parsed = None
 
