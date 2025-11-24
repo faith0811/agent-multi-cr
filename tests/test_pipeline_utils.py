@@ -1,6 +1,6 @@
 import unittest
 
-from src.pipeline import build_qa_snippet_for_reviewer
+from agent_multi_cr.pipeline import build_qa_snippet_for_reviewer
 
 
 class TestPipelineUtils(unittest.TestCase):
@@ -27,4 +27,3 @@ class TestPipelineUtils(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

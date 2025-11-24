@@ -2,7 +2,7 @@ import io
 import unittest
 from unittest import mock
 
-from src.context import get_stdin_context, resolve_context_text
+from agent_multi_cr.context import get_stdin_context, resolve_context_text
 
 
 class TestContextHelpers(unittest.TestCase):
@@ -31,4 +31,3 @@ class TestContextHelpers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

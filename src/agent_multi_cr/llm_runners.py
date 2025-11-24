@@ -44,8 +44,9 @@ def run_codex(auditor: Auditor, prompt: str) -> str:
         auditor.model_name,
         "-",
     ]
-    # Use 1 hour timeout for LLM calls
-    return run_shell(cmd, input_text=prompt, cwd=auditor.workdir, timeout=3600.0)
+    # Use the default shell timeout, which can be overridden via
+    # AGENT_MULTI_CR_SHELL_TIMEOUT_SEC.
+    return run_shell(cmd, input_text=prompt, cwd=auditor.workdir)
 
 
 def run_gemini(auditor: Auditor, prompt: str) -> str:
@@ -56,8 +57,9 @@ def run_gemini(auditor: Auditor, prompt: str) -> str:
     the real project files (only any scratch files or memo files we may create).
     """
     cmd = ["gemini", "--yolo", "--model", auditor.model_name]
-    # Use 1 hour timeout for LLM calls
-    return run_shell(cmd, input_text=prompt, cwd=auditor.workdir, timeout=3600.0)
+    # Use the default shell timeout, which can be overridden via
+    # AGENT_MULTI_CR_SHELL_TIMEOUT_SEC.
+    return run_shell(cmd, input_text=prompt, cwd=auditor.workdir)
 
 
 def run_auditor_initial_review(
@@ -328,4 +330,5 @@ def translate_markdown_to_zh(markdown: str) -> str:
         "-",
     ]
     # Use current working directory; translation does not depend on repo files.
-    return run_shell(cmd, input_text=prompt, cwd=os.getcwd(), timeout=3600.0)
+    # Timeout is controlled by AGENT_MULTI_CR_SHELL_TIMEOUT_SEC or the default.
+    return run_shell(cmd, input_text=prompt, cwd=os.getcwd())

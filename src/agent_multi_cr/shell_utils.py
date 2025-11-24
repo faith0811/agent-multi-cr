@@ -67,3 +67,4 @@ def run_shell(
             f"stderr:\n{result.stderr}"
         )
     return result.stdout.strip()
+

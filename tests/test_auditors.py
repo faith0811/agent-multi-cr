@@ -2,7 +2,7 @@ import os
 import tempfile
 import unittest
 
-from src.auditors import Auditor, extract_and_update_memo, load_memo, slugify
+from agent_multi_cr.auditors import Auditor, extract_and_update_memo, load_memo, slugify
 
 
 class TestSlugify(unittest.TestCase):
@@ -84,4 +84,3 @@ class TestMemoExtraction(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

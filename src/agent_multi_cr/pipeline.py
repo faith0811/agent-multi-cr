@@ -82,7 +82,7 @@ def _copy_repo_into_workdir(repo_root: str, workdir: str) -> None:
     def ignore(dirpath: str, names: List[str]) -> List[str]:
         # Start with pattern-based ignores.
         ignored = set(pattern_ignore(dirpath, names))
-        
+
         # If not a git repo, we are done
         if not has_git:
             return list(ignored)
@@ -120,7 +120,7 @@ def _copy_repo_into_workdir(repo_root: str, workdir: str) -> None:
             )
             input_data = "\0".join(check_map.keys()) + "\0"
             stdout, _ = proc.communicate(input_data.encode("utf-8"))
-            
+
             if proc.returncode in (0, 1):
                 # 0 = some ignored, 1 = none ignored (but command ran ok)
                 # stdout contains the paths that ARE ignored, NUL-separated
@@ -636,3 +636,4 @@ def run_pipeline(
     sys.stderr.flush()
 
     return "".join(parts).strip()
+

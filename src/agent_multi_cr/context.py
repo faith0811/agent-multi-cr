@@ -207,3 +207,4 @@ def resolve_context_text(
             f"{data}"
         )
     raise SystemExit(f"Unknown context mode: {context_mode}")
+

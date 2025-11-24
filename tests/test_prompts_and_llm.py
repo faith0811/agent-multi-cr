@@ -1,12 +1,12 @@
 import unittest
 
-from src.llm_runners import parse_arbiter_json
-from src.prompts import (
+from agent_multi_cr.llm_runners import parse_arbiter_json
+from agent_multi_cr.prompts import (
     build_arbiter_prompt,
     build_followup_prompt,
     build_initial_review_prompt,
 )
-from src.auditors import Auditor
+from agent_multi_cr.auditors import Auditor
 
 
 class TestPrompts(unittest.TestCase):
@@ -57,6 +57,7 @@ class TestPrompts(unittest.TestCase):
             max_queries=3,
             query_count=1,
             include_p2_p3=True,
+            allow_queries=True,
         )
         self.assertIn("ArbiterX", prompt)
         self.assertIn("Auditor1", prompt)

@@ -23,12 +23,13 @@ setup(
     name="agent-multi-cr",
     version="0.1.0",
     description="Multi-model code review using Codex and Gemini with an arbiter.",
-    packages=find_packages(exclude=("tests", "tests.*")),
+    package_dir={"": "src"},
+    packages=find_packages(where="src"),
     python_requires=">=3.8",
     install_requires=read_requirements(),
     entry_points={
         "console_scripts": [
-            "agent-multi-cr=src.cli:main",
+            "agent-multi-cr=agent_multi_cr.cli:main",
         ]
     },
 )
