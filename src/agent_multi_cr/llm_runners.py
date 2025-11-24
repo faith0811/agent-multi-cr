@@ -1,4 +1,5 @@
 import os
+import sys
 from typing import List, Optional
 
 from .auditors import Auditor, extract_and_update_memo, load_memo
@@ -23,8 +24,6 @@ def _run_auditor_llm_with_memo(
 ):
     """Shared helper to run an auditor LLM call and handle memo updates."""
     if verbose:
-        import sys
-
         sys.stderr.write(
             f"\n==== LLM PROMPT BEGIN [{label}] ====\n{prompt}\n"
             f"==== LLM PROMPT END   [{label}] ====\n"
@@ -38,8 +37,6 @@ def _run_auditor_llm_with_memo(
         else:
             raise ValueError(f"Unknown auditor kind: {auditor.kind}")
     except Exception as e:
-        import sys
-
         sys.stderr.write(f"Error running {label}: {e}\n")
         return f"{error_heading}\n\n{error_body_prefix}{e}", memo_before
 

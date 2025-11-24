@@ -32,6 +32,10 @@ def _atexit_cleanup_run_workdirs() -> None:
             marker = os.path.join(path, WORKDIR_MARKER)
             if os.path.exists(marker):
                 _cleanup_workdir(path)
+        try:
+            _CLEANUP_RUN_WORKDIRS.remove(path)
+        except ValueError:
+            pass
 
 
 def build_qa_snippet_for_reviewer(
@@ -49,7 +53,7 @@ def build_qa_snippet_for_reviewer(
     return "\n---\n".join(parts) if parts else "(no previous Q&A with you)"
 
 
-def _copy_repo_into_workdir(repo_root: str, workdir: str) -> None:
+def _copy_repo_into_workdir(repo_root: str, workdir: str, include_git: bool) -> None:
     """
     Copy the current repo contents into the auditor's working directory.
 
@@ -64,7 +68,6 @@ def _copy_repo_into_workdir(repo_root: str, workdir: str) -> None:
         if p.strip()
     ]
     ignore_patterns = [
-        ".git",
         ".multi_cr_auditors",
         "__pycache__",
         "*.pyc",
@@ -85,7 +88,10 @@ def _copy_repo_into_workdir(repo_root: str, workdir: str) -> None:
         "*.sqlite",
         "*.sqlite3",
         "*.db",
-    ] + extra_exclude_patterns
+    ]
+    if not include_git:
+        ignore_patterns.insert(0, ".git")
+    ignore_patterns.extend(extra_exclude_patterns)
 
     pattern_ignore = shutil.ignore_patterns(*ignore_patterns)
     git_dir = os.path.join(repo_root, ".git")
@@ -289,12 +295,21 @@ def run_pipeline(
 
     # Determine Codex configs used for reviewers vs arbiter.
     arbiter: Optional[Auditor] = None
-    # Never use gpt-5.1-codex|low as a reviewer; it is reserved for arbiter.
-    codex_auditor_configs: List[Tuple[str, str]] = [
-        (model_name, effort)
-        for (model_name, effort) in codex_configs
-        if not (model_name == "gpt-5.1-codex" and effort == "low")
-    ]
+    # Never use gpt-5.1-codex|low as a reviewer when Codex acts as arbiter;
+    # in that mode it is reserved for arbiter only.
+    if arbiter_family == "codex":
+        codex_auditor_configs: List[Tuple[str, str]] = []
+        for model_name, effort in codex_configs:
+            if model_name == "gpt-5.1-codex" and effort == "low":
+                sys.stderr.write(
+                    "Ignoring Codex[gpt-5.1-codex|low] as a reviewer because it "
+                    "is reserved for use as the Codex arbiter.\n"
+                )
+                sys.stderr.flush()
+                continue
+            codex_auditor_configs.append((model_name, effort))
+    else:
+        codex_auditor_configs = list(codex_configs)
 
     if arbiter_family == "codex":
         # Use a dedicated low-effort Codex model as arbiter, separate from reviewers.
@@ -325,7 +340,11 @@ def run_pipeline(
         workdir = os.path.join(run_workdir_abs, slug)
         memo_root = os.path.join(base_workdir_abs, "memos", slug)
         print(f"▶ Setting up auditor {idx}/{total_planned_auditors}: {name}", flush=True)
-        _copy_repo_into_workdir(repo_root, workdir)
+        _copy_repo_into_workdir(
+            repo_root=repo_root,
+            workdir=workdir,
+            include_git=context_mode == "diff",
+        )
         auditors.append(
             Auditor(
                 name=name,
@@ -344,7 +363,11 @@ def run_pipeline(
     gemini_workdir = os.path.join(run_workdir_abs, gemini_slug)
     gemini_memo_root = os.path.join(base_workdir_abs, "memos", gemini_slug)
     print(f"▶ Setting up auditor {gemini_index}/{total_planned_auditors}: {gemini_name}", flush=True)
-    _copy_repo_into_workdir(repo_root, gemini_workdir)
+    _copy_repo_into_workdir(
+        repo_root=repo_root,
+        workdir=gemini_workdir,
+        include_git=context_mode == "diff",
+    )
     gemini_auditor = Auditor(
         name=gemini_name,
         kind="gemini",
@@ -625,6 +648,12 @@ def run_pipeline(
                 "leaving it in place. Please inspect and remove manually if desired.\n",
                 flush=True,
             )
+    # This run's workdir has been cleaned up (or left in place intentionally);
+    # drop it from the global cleanup list to avoid unbounded growth.
+    try:
+        _CLEANUP_RUN_WORKDIRS.remove(run_workdir_abs)
+    except ValueError:
+        pass
 
     # Stop the progress reporter.
     stop_progress.set()

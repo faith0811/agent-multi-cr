@@ -142,7 +142,7 @@ def build_peer_review_prompt(
     {context_text}
     ```
 
-    This is cross-check round {round_index} of at most {max_rounds}.
+    This is a cross-check round where you reconcile your review with others.
 
     Here is your earlier review:
 
