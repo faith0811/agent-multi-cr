@@ -1,13 +1,8 @@
 #!/usr/bin/env python3
 
-import os
-import sys
+from bootstrap import ensure_src_on_path
 
-
-ROOT = os.path.dirname(__file__)
-SRC_DIR = os.path.join(ROOT, "src")
-if SRC_DIR not in sys.path:
-    sys.path.insert(0, SRC_DIR)
+ensure_src_on_path()
 
 from agent_multi_cr.cli import main
 

@@ -5,13 +5,18 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 
+MEMO_JSON_PREFIX = "MEMO_JSON:"
+
+
 @dataclass
 class Auditor:
     name: str           # e.g. "Codex[gpt-5.1|high]" or "Gemini[gemini-3-pro-preview]"
     kind: str           # "codex" or "gemini"
     model_name: str     # model id for CLI
-    workdir: str        # private working directory path
+    workdir: str        # private working directory path (per-run workspace)
     reasoning_effort: Optional[str] = None  # only for codex; e.g. "high", "xhigh"
+    # Optional persistent root for memo files. If not set, memos live in workdir.
+    memo_root: Optional[str] = None
 
 
 def slugify(name: str) -> str:
@@ -22,7 +27,8 @@ def slugify(name: str) -> str:
 
 def memo_path(auditor: Auditor) -> str:
     """Return the memo file path for an auditor."""
-    return os.path.join(auditor.workdir, "memo.txt")
+    root = auditor.memo_root or auditor.workdir
+    return os.path.join(root, "memo.txt")
 
 
 def load_memo(auditor: Auditor) -> str:
@@ -39,8 +45,9 @@ def load_memo(auditor: Auditor) -> str:
 
 def save_memo(auditor: Auditor, memo_text: str) -> None:
     """Persist memo text for an auditor."""
-    os.makedirs(auditor.workdir, exist_ok=True)
-    path = memo_path(auditor)
+    root = auditor.memo_root or auditor.workdir
+    os.makedirs(root, exist_ok=True)
+    path = os.path.join(root, "memo.txt")
     with open(path, "w", encoding="utf-8") as f:
         f.write(memo_text)
 
@@ -51,7 +58,7 @@ def extract_and_update_memo(
     current_memo: str,
 ) -> Tuple[str, str]:
     """
-    Look for a line starting with 'MEMO_JSON:' in the model's output.
+    Look for a line starting with MEMO_JSON_PREFIX in the model's output.
 
     If present and parses as JSON, update the memo accordingly and return:
         (clean_output_without_memo_line, new_memo_text)
@@ -62,8 +69,8 @@ def extract_and_update_memo(
 
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith("MEMO_JSON:"):
-            json_part = stripped[len("MEMO_JSON:"):].strip()
+        if stripped.startswith(MEMO_JSON_PREFIX):
+            json_part = stripped[len(MEMO_JSON_PREFIX):].strip()
             try:
                 obj = json.loads(json_part)
                 append_text = obj.get("append", "")
@@ -85,4 +92,3 @@ def extract_and_update_memo(
     if new_memo != current_memo:
         save_memo(auditor, new_memo)
     return cleaned_output, new_memo
-

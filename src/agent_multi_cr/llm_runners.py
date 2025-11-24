@@ -1,4 +1,5 @@
 import os
+from typing import List, Optional
 
 from .auditors import Auditor, extract_and_update_memo, load_memo
 from .prompts import (
@@ -46,6 +47,27 @@ def _run_auditor_llm_with_memo(
     return cleaned, memo_after
 
 
+def _build_codex_cmd(
+    model_name: str,
+    reasoning_effort: Optional[str] = None,
+    search: bool = True,
+) -> List[str]:
+    cmd: List[str] = ["codex", "--yolo"]
+    if search:
+        cmd.append("--search")
+    if reasoning_effort:
+        cmd.extend(["--config", f"model_reasoning_effort={reasoning_effort}"])
+    cmd.extend(
+        [
+            "exec",
+            "--model",
+            model_name,
+            "-",
+        ]
+    )
+    return cmd
+
+
 def run_codex(auditor: Auditor, prompt: str) -> str:
     """
     Call Codex CLI in non-interactive mode for a given auditor.
@@ -57,17 +79,11 @@ def run_codex(auditor: Auditor, prompt: str) -> str:
     if not auditor.reasoning_effort:
         raise ValueError(f"Codex auditor {auditor.name} is missing reasoning_effort.")
 
-    cmd = [
-        "codex",
-        "--yolo",
-        "--search",
-        "--config",
-        f"model_reasoning_effort={auditor.reasoning_effort}",
-        "exec",
-        "--model",
-        auditor.model_name,
-        "-",
-    ]
+    cmd = _build_codex_cmd(
+        model_name=auditor.model_name,
+        reasoning_effort=auditor.reasoning_effort,
+        search=True,
+    )
     # Use the default shell timeout, which can be overridden via
     # AGENT_MULTI_CR_SHELL_TIMEOUT_SEC.
     return run_shell(cmd, input_text=prompt, cwd=auditor.workdir)
@@ -304,15 +320,8 @@ def translate_markdown_to_zh(markdown: str) -> str:
         """
     ).strip()
 
-    cmd = [
-        "codex",
-        "--yolo",
-        "--search",
-        "exec",
-        "--model",
-        "gpt-5.1",
-        "-",
-    ]
+    # For translation we do not need repo search, so we disable it.
+    cmd = _build_codex_cmd(model_name="gpt-5.1", reasoning_effort=None, search=False)
     # Use current working directory; translation does not depend on repo files.
     # Timeout is controlled by AGENT_MULTI_CR_SHELL_TIMEOUT_SEC or the default.
     return run_shell(cmd, input_text=prompt, cwd=os.getcwd())

@@ -2,7 +2,13 @@ import os
 import tempfile
 import unittest
 
-from agent_multi_cr.auditors import Auditor, extract_and_update_memo, load_memo, slugify
+from agent_multi_cr.auditors import (
+    MEMO_JSON_PREFIX,
+    Auditor,
+    extract_and_update_memo,
+    load_memo,
+    slugify,
+)
 
 
 class TestSlugify(unittest.TestCase):
@@ -32,7 +38,10 @@ class TestMemoExtraction(unittest.TestCase):
 
             # Start with empty memo; append text.
             current_memo = load_memo(auditor)
-            raw_output = "Line 1\nMEMO_JSON: {\"append\": \"note1\", \"overwrite\": false}\nLine 2"
+            raw_output = (
+                f"Line 1\n{MEMO_JSON_PREFIX} "
+                '{"append": "note1", "overwrite": false}\nLine 2'
+            )
             cleaned, new_memo = extract_and_update_memo(auditor, raw_output, current_memo)
 
             self.assertEqual(cleaned, "Line 1\nLine 2")
@@ -44,7 +53,11 @@ class TestMemoExtraction(unittest.TestCase):
 
             # Append again without overwrite should add a newline and then text.
             current_memo = new_memo
-            raw_output2 = "Something\nMEMO_JSON: {\"append\": \"note2\", \"overwrite\": false}"
+            raw_output2 = (
+                "Something\n"
+                f"{MEMO_JSON_PREFIX} "
+                '{"append": "note2", "overwrite": false}'
+            )
             cleaned2, new_memo2 = extract_and_update_memo(auditor, raw_output2, current_memo)
 
             self.assertEqual(cleaned2, "Something")
@@ -55,7 +68,11 @@ class TestMemoExtraction(unittest.TestCase):
 
             # Overwrite should replace the memo entirely.
             current_memo = new_memo2
-            raw_output3 = "Header\nMEMO_JSON: {\"append\": \"fresh\", \"overwrite\": true}"
+            raw_output3 = (
+                "Header\n"
+                f"{MEMO_JSON_PREFIX} "
+                '{"append": "fresh", "overwrite": true}'
+            )
             cleaned3, new_memo3 = extract_and_update_memo(auditor, raw_output3, current_memo)
 
             self.assertEqual(cleaned3, "Header")
@@ -74,7 +91,7 @@ class TestMemoExtraction(unittest.TestCase):
                 reasoning_effort="high",
             )
             current_memo = ""
-            raw_output = "Line\nMEMO_JSON: not-a-json\nMore"
+            raw_output = f"Line\n{MEMO_JSON_PREFIX} not-a-json\nMore"
             cleaned, new_memo = extract_and_update_memo(auditor, raw_output, current_memo)
 
             # Memo unchanged and MEMO_JSON line removed from cleaned output.

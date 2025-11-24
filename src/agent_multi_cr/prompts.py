@@ -1,5 +1,7 @@
 from textwrap import dedent
 
+from .auditors import MEMO_JSON_PREFIX
+
 
 def _memo_json_footer(extra_append_clause: str) -> str:
     """
@@ -9,7 +11,7 @@ def _memo_json_footer(extra_append_clause: str) -> str:
     return f"""
     At the very end of your answer, on a separate line, add:
 
-    MEMO_JSON: {{"append": "...", "overwrite": false}}
+    {MEMO_JSON_PREFIX} {{"append": "...", "overwrite": false}}
 
     - `append` should contain any additional private notes you want to keep for yourself{extra_append_clause}
     - If `overwrite` is true, your existing memo will be replaced with `append`.

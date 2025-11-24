@@ -21,6 +21,18 @@ from .llm_runners import (
 
 WORKDIR_MARKER = ".agent_multi_cr_workspace"
 
+_CLEANUP_RUN_WORKDIRS: List[str] = []
+_ATEEXIT_REGISTERED = False
+
+
+def _atexit_cleanup_run_workdirs() -> None:
+    """Best-effort cleanup for any leftover per-run workdirs on process exit."""
+    for path in list(_CLEANUP_RUN_WORKDIRS):
+        if os.path.isdir(path):
+            marker = os.path.join(path, WORKDIR_MARKER)
+            if os.path.exists(marker):
+                _cleanup_workdir(path)
+
 
 def build_qa_snippet_for_reviewer(
     qa_history: List[Dict[str, str]],
@@ -199,6 +211,13 @@ def run_pipeline(
     # will be cleaned up at the end of this run.
     os.makedirs(base_workdir_abs, exist_ok=True)
 
+    # Track this run's workdir for best-effort cleanup on process exit.
+    global _ATEEXIT_REGISTERED
+    _CLEANUP_RUN_WORKDIRS.append(run_workdir_abs)
+    if not _ATEEXIT_REGISTERED:
+        atexit.register(_atexit_cleanup_run_workdirs)
+        _ATEEXIT_REGISTERED = True
+
     print(f"▶ Preparing auditors workdir for this run at {run_workdir_abs}...", flush=True)
     if os.path.isdir(run_workdir_abs):
         marker_path = os.path.join(run_workdir_abs, WORKDIR_MARKER)
@@ -224,17 +243,6 @@ def run_pipeline(
     marker_path = os.path.join(run_workdir_abs, WORKDIR_MARKER)
     with open(marker_path, "w", encoding="utf-8") as f:
         f.write("agent-multi-cr auditors workspace\n")
-
-    # Ensure that, on normal process exit (including uncaught exceptions
-    # and Ctrl+C), we attempt to clean up this run's workdir if it still
-    # exists and has the expected safety marker.
-    def _atexit_cleanup_run_workdir() -> None:
-        if os.path.isdir(run_workdir_abs):
-            marker = os.path.join(run_workdir_abs, WORKDIR_MARKER)
-            if os.path.exists(marker):
-                _cleanup_workdir(run_workdir_abs)
-
-    atexit.register(_atexit_cleanup_run_workdir)
 
     # Shared progress state for interactive summaries.
     start_time = time.time()
@@ -313,7 +321,9 @@ def run_pipeline(
     # Set up Codex auditors (excluding arbiter-only config when arbiter_family=codex)
     for idx, (model_name, effort) in enumerate(codex_auditor_configs, start=1):
         name = f"Codex[{model_name}|{effort}]"
-        workdir = os.path.join(run_workdir_abs, slugify(name))
+        slug = slugify(name)
+        workdir = os.path.join(run_workdir_abs, slug)
+        memo_root = os.path.join(base_workdir_abs, "memos", slug)
         print(f"▶ Setting up auditor {idx}/{total_planned_auditors}: {name}", flush=True)
         _copy_repo_into_workdir(repo_root, workdir)
         auditors.append(
@@ -323,13 +333,16 @@ def run_pipeline(
                 model_name=model_name,
                 workdir=workdir,
                 reasoning_effort=effort,
+                memo_root=memo_root,
             )
         )
 
     # Set up Gemini auditor reviewer.
     gemini_index = total_planned_auditors
     gemini_name = f"Gemini[{gemini_model}]"
-    gemini_workdir = os.path.join(run_workdir_abs, slugify(gemini_name))
+    gemini_slug = slugify(gemini_name)
+    gemini_workdir = os.path.join(run_workdir_abs, gemini_slug)
+    gemini_memo_root = os.path.join(base_workdir_abs, "memos", gemini_slug)
     print(f"▶ Setting up auditor {gemini_index}/{total_planned_auditors}: {gemini_name}", flush=True)
     _copy_repo_into_workdir(repo_root, gemini_workdir)
     gemini_auditor = Auditor(
@@ -338,6 +351,7 @@ def run_pipeline(
         model_name=gemini_model,
         workdir=gemini_workdir,
         reasoning_effort=None,
+        memo_root=gemini_memo_root,
     )
     auditors.append(gemini_auditor)
 
@@ -353,9 +367,6 @@ def run_pipeline(
             workdir=arbiter_workdir,
             reasoning_effort=None,
         )
-
-    if not auditors:
-        raise SystemExit("You must have at least one auditor configured.")
 
     # Choose arbiter
     if arbiter_family in ("codex", "gemini"):

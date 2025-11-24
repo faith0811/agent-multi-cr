@@ -1,9 +1,11 @@
-import os
-import sys
+"""
+Test package for agent-multi-cr.
 
+We reuse the bootstrap helper from the project root to ensure the local
+``src/`` directory is importable when running tests without installing the
+package.
+"""
 
-ROOT = os.path.dirname(os.path.dirname(__file__))
-SRC_DIR = os.path.join(ROOT, "src")
-if SRC_DIR not in sys.path:
-    sys.path.insert(0, SRC_DIR)
+from bootstrap import ensure_src_on_path
 
+ensure_src_on_path()
