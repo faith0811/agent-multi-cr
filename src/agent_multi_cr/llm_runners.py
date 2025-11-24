@@ -110,7 +110,6 @@ def run_auditor_initial_review(
 
     Returns (cleaned_output_without_memo_json, updated_memo_text).
     """
-    os.makedirs(auditor.workdir, exist_ok=True)
     memo_before = load_memo(auditor)
     prompt = build_initial_review_prompt(
         reviewer_name=auditor.name,

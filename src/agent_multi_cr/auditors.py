@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import sys
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -82,7 +83,6 @@ def extract_and_update_memo(
                             new_memo += "\n"
                         new_memo += append_text
             except Exception as exc:
-                import sys
                 sys.stderr.write(f"Warning: Failed to parse MEMO_JSON for {auditor.name}: {exc}\n")
         else:
             cleaned_lines.append(line)

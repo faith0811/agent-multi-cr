@@ -1,30 +1,13 @@
 """
 Main package for agent-multi-cr.
 
-This module exposes the public API under the ``agent_multi_cr`` namespace.
+The public API is intentionally minimal; most functionality is exposed via the
+``agent-multi-cr`` console script. Library users should prefer the CLI or
+call ``run_pipeline`` directly.
 """
 
-from .pipeline import run_pipeline  # noqa: F401
-from .auditors import Auditor, extract_and_update_memo, load_memo  # noqa: F401
-from .llm_runners import (  # noqa: F401
-    parse_arbiter_json,
-    run_auditor_followup,
-    run_auditor_initial_review,
-    run_arbiter_step,
-    run_reviewer_peer_round,
-    translate_markdown_to_zh,
-)
+from .pipeline import run_pipeline
 
 __all__ = [
     "run_pipeline",
-    "Auditor",
-    "extract_and_update_memo",
-    "load_memo",
-    "parse_arbiter_json",
-    "run_auditor_followup",
-    "run_auditor_initial_review",
-    "run_arbiter_step",
-    "run_reviewer_peer_round",
-    "translate_markdown_to_zh",
 ]
-

@@ -97,12 +97,24 @@ def _copy_repo_into_workdir(repo_root: str, workdir: str, include_git: bool) -> 
     git_dir = os.path.join(repo_root, ".git")
     has_git = os.path.isdir(git_dir)
 
+    # Bound the number of git check-ignore subprocesses so large repositories do
+    # not spawn an excessive number of short-lived processes. The limit can be
+    # tuned via AGENT_MULTI_CR_GIT_CHECK_IGNORE_LIMIT (default: 200).
+    limit_env = os.environ.get("AGENT_MULTI_CR_GIT_CHECK_IGNORE_LIMIT")
+    try:
+        git_check_ignore_limit = int(limit_env) if limit_env is not None else 200
+    except ValueError:
+        git_check_ignore_limit = 200
+    git_check_ignore_used = 0
+
     def ignore(dirpath: str, names: List[str]) -> List[str]:
+        nonlocal git_check_ignore_used
         # Start with pattern-based ignores.
         ignored = set(pattern_ignore(dirpath, names))
 
-        # If not a git repo, we are done
-        if not has_git:
+        # If not a git repo or the limit for git check-ignore calls is exhausted,
+        # we are done. The pattern-based ignores still apply.
+        if not has_git or git_check_ignore_limit <= 0 or git_check_ignore_used >= git_check_ignore_limit:
             return list(ignored)
 
         # Identify candidates that are NOT yet ignored by patterns or already skipped
@@ -129,6 +141,7 @@ def _copy_repo_into_workdir(repo_root: str, workdir: str, include_git: bool) -> 
         # Batch check using git check-ignore --stdin -z
         # -z uses NUL as terminator for input and output
         try:
+            git_check_ignore_used += 1
             proc = subprocess.Popen(
                 ["git", "check-ignore", "--stdin", "-z"],
                 cwd=repo_root,
@@ -184,7 +197,7 @@ def run_pipeline(
     verbose: bool = False,
     output_lang: str = "zh",
     include_p2_p3: bool = False,
-    arbiter_round_mode: str = "multi",
+    arbiter_round_mode: str = "single",
 ) -> str:
     """
     Main entry point for the multi-model review pipeline.
@@ -487,8 +500,7 @@ def run_pipeline(
 
     # The arbiter will see both the original initial reviews and the latest
     # cross-checked reviews as its primary input.
-    initial_reviews = updated_reviews
-    latest_reviews: Dict[str, str] = initial_reviews
+    latest_reviews: Dict[str, str] = updated_reviews
 
     qa_history: List[Dict[str, str]] = []
     query_count = 0
