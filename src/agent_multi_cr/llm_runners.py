@@ -74,7 +74,15 @@ def _build_gemini_cmd(model_name: str) -> List[str]:
 
 
 def _build_claude_cmd(model_name: str) -> List[str]:
-    cmd: List[str] = ["claude", "--yolo", "--model", model_name]
+    # Claude CLI has no --yolo flag; use --print for non-interactive,
+    # single-response mode, bypassing permission prompts so it can run unattended.
+    cmd: List[str] = [
+        "claude",
+        "--print",
+        "--dangerously-skip-permissions",
+        "--model",
+        model_name,
+    ]
     return cmd
 
 
