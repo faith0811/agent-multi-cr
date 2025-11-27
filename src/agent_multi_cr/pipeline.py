@@ -325,7 +325,7 @@ def run_pipeline(
     arbiter_family: str,
     max_queries: int,
     base_workdir: str,
-    claude_model: Optional[str] = "claude-opus-4-5",
+    claude_model: Optional[str] = "opus",
     verbose: bool = False,
     output_lang: str = "zh",
     include_p2_p3: bool = False,

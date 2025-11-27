@@ -59,8 +59,8 @@ def main() -> None:
     parser.add_argument(
         "--claude-model",
         type=str,
-        default="claude-opus-4-5",
-        help="Claude model id for an additional auditor (default: claude-opus-4-5).",
+        default="opus",
+        help="Claude model id or alias for an additional auditor (default: opus).",
     )
     parser.add_argument(
         "--arbiter-family",

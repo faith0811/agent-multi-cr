@@ -65,7 +65,7 @@ Key options:
 - `--codex-model` – may be passed multiple times; each value is either
   `model` or `model:effort` (e.g. `gpt-5.1:xhigh`).
 - `--gemini-model` – Gemini model id (default: `gemini-3-pro-preview`).
-- `--claude-model` – Claude model id for an additional reviewer (default: `claude-opus-4-5`).
+- `--claude-model` – Claude model id or alias for an additional reviewer (default: `opus`).
 - `--arbiter-family` – `gemini` (default, uses the configured Gemini model as
   arbiter) or `codex` (uses a dedicated `gpt-5.1-codex|low` arbiter).
 - `--max-queries` – maximum number of clarification questions the arbiter may ask.

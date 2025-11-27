@@ -76,13 +76,11 @@ def _build_gemini_cmd(model_name: str) -> List[str]:
 def _build_claude_cmd(model_name: str) -> List[str]:
     # Claude CLI has no --yolo flag; use --print for non-interactive,
     # single-response mode, bypassing permission prompts so it can run unattended.
-    cmd: List[str] = [
-        "claude",
-        "--print",
-        "--dangerously-skip-permissions",
-        "--model",
-        model_name,
-    ]
+    # We still allow an explicit model to be passed (defaulting to 'opus' via
+    # the CLI/pipeline configuration), but callers may override it.
+    cmd: List[str] = ["claude", "--print", "--dangerously-skip-permissions"]
+    if model_name:
+        cmd.extend(["--model", model_name])
     return cmd
 
 
