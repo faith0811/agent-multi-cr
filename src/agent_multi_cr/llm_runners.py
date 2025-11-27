@@ -35,6 +35,8 @@ def _run_auditor_llm_with_memo(
             raw = run_codex(auditor, prompt)
         elif auditor.kind == "gemini":
             raw = run_gemini(auditor, prompt)
+        elif auditor.kind == "claude":
+            raw = run_claude(auditor, prompt)
         else:
             raise ValueError(f"Unknown auditor kind: {auditor.kind}")
     except Exception as e:
@@ -66,6 +68,16 @@ def _build_codex_cmd(
     return cmd
 
 
+def _build_gemini_cmd(model_name: str) -> List[str]:
+    cmd: List[str] = ["gemini", "--yolo", "--model", model_name]
+    return cmd
+
+
+def _build_claude_cmd(model_name: str) -> List[str]:
+    cmd: List[str] = ["claude", "--yolo", "--model", model_name]
+    return cmd
+
+
 def run_codex(auditor: Auditor, prompt: str) -> str:
     """
     Call Codex CLI in non-interactive mode for a given auditor.
@@ -94,7 +106,20 @@ def run_gemini(auditor: Auditor, prompt: str) -> str:
     We run Gemini in the auditor's private working directory, which does not contain
     the real project files (only any scratch files or memo files we may create).
     """
-    cmd = ["gemini", "--yolo", "--model", auditor.model_name]
+    cmd = _build_gemini_cmd(auditor.model_name)
+    # Use the default shell timeout, which can be overridden via
+    # AGENT_MULTI_CR_SHELL_TIMEOUT_SEC.
+    return run_shell(cmd, input_text=prompt, cwd=auditor.workdir)
+
+
+def run_claude(auditor: Auditor, prompt: str) -> str:
+    """
+    Call Claude CLI in non-interactive mode.
+
+    We run Claude in the auditor's private working directory, which contains
+    this run's isolated view of the repository.
+    """
+    cmd = _build_claude_cmd(auditor.model_name)
     # Use the default shell timeout, which can be overridden via
     # AGENT_MULTI_CR_SHELL_TIMEOUT_SEC.
     return run_shell(cmd, input_text=prompt, cwd=auditor.workdir)
@@ -284,9 +309,14 @@ def run_arbiter_step(
     return parse_arbiter_json(raw)
 
 
-def translate_markdown_to_zh(markdown: str, *, cwd: Optional[str] = None) -> str:
+def translate_markdown_to_zh(
+    markdown: str,
+    *,
+    cwd: Optional[str] = None,
+    model_name: str = "gemini-3-pro-preview",
+) -> str:
     """
-    Translate a Markdown code review into Simplified Chinese using Codex CLI.
+    Translate a Markdown code review into Simplified Chinese using Gemini CLI.
 
     This is only used on the final unified report. We keep all Markdown
     structure and code blocks, and only translate natural language.
@@ -311,8 +341,9 @@ def translate_markdown_to_zh(markdown: str, *, cwd: Optional[str] = None) -> str
         """
     ).strip()
 
-    # For translation we do not need repo search, so we disable it.
-    cmd = _build_codex_cmd(model_name="gpt-5.1", reasoning_effort=None, search=False)
+    # For translation we do not need repo search or any special Codex configs;
+    # we call Gemini directly with the configured model.
+    cmd = _build_gemini_cmd(model_name=model_name)
     # Use a provided cwd (typically the run workdir) instead of the real repo
     # root so that translation runs inside the same sandboxed environment as
     # the auditors. Translation does not depend on repo files.

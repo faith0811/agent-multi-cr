@@ -1,3 +1,2 @@
 # No Python package dependencies.
-# This tool relies on the external `codex` and `gemini` CLIs being installed.
-
+# This tool relies on the external `codex`, `gemini`, and (optionally) `claude` CLIs being installed.

@@ -1,10 +1,10 @@
 # agent-multi-cr
 
-Multi‑model code review using Codex and Gemini, coordinated by an arbiter model.
+Multi‑model code review using Codex, Gemini, and optional Claude, coordinated by an arbiter model.
 
 This tool spins up several independent “auditors” (multiple Codex models plus one
-Gemini model), lets them review the same codebase, cross‑check each other, and
-finally asks a dedicated arbiter model to synthesize a single joint review.
+Gemini model and optionally one Claude model), lets them review the same codebase, cross‑check
+each other, and finally asks a dedicated arbiter model to synthesize a single joint review.
 
 Reviews are structured by priority (`P0`–`P3`) and can optionally be translated
 to Simplified Chinese.
@@ -13,6 +13,7 @@ to Simplified Chinese.
 
 - Multiple Codex reviewers (configurable models and reasoning effort).
 - Gemini reviewer plus optional Gemini arbiter.
+- Optional Claude reviewer (single configurable model).
 - Arbiter loop that can ask targeted follow‑up questions to individual reviewers.
 - File‑based memo system per reviewer, persisted across runs under a dedicated
   auditors workdir.
@@ -64,8 +65,9 @@ Key options:
 - `--codex-model` – may be passed multiple times; each value is either
   `model` or `model:effort` (e.g. `gpt-5.1:xhigh`).
 - `--gemini-model` – Gemini model id (default: `gemini-3-pro-preview`).
-- `--arbiter-family` – `codex` (default, uses a dedicated `gpt-5.1-codex|low`
-  arbiter) or `gemini` (uses the configured Gemini model as arbiter).
+- `--claude-model` – Claude model id for an additional reviewer (default: `claude-opus-4-5`).
+- `--arbiter-family` – `gemini` (default, uses the configured Gemini model as
+  arbiter) or `codex` (uses a dedicated `gpt-5.1-codex|low` arbiter).
 - `--max-queries` – maximum number of clarification questions the arbiter may ask.
 - `--auditors-workdir` – base directory under which each auditor gets its own
   working directory (default: `.multi_cr_auditors` under the repo root).
@@ -98,4 +100,3 @@ work on the agent. The launcher script `main.py` and the test package both
 reuse `bootstrap.ensure_src_on_path()` so that the `src/` layout works without
 requiring a full install, but normal usage should rely on the installed
 `agent-multi-cr` console script.
-

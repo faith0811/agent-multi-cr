@@ -7,7 +7,7 @@ from .pipeline import run_pipeline
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Multi-model code review using Codex (multiple models) + Gemini, "
+            "Multi-model code review using Codex (multiple models), Gemini, and optional Claude, "
             "with an arbiter that can iteratively query individual reviewers. "
             "You specify the review task in free-form English, and choose the context "
             "(git diff, repo, or stdin). Each auditor gets its own private "
@@ -57,14 +57,20 @@ def main() -> None:
         help="Gemini model id (default: gemini-3-pro-preview).",
     )
     parser.add_argument(
+        "--claude-model",
+        type=str,
+        default="claude-opus-4-5",
+        help="Claude model id for an additional auditor (default: claude-opus-4-5).",
+    )
+    parser.add_argument(
         "--arbiter-family",
         choices=["codex", "gemini"],
-        default="codex",
+        default="gemini",
         help=(
             "Which family acts as arbiter for the final decision: "
-            "'codex' (default, uses a dedicated gpt-5.1-codex|low arbiter "
-            "separate from the reviewer models) or 'gemini' (uses the "
-            "configured Gemini model as arbiter)."
+            "'gemini' (default, uses the configured Gemini model as arbiter) "
+            "or 'codex' (uses a dedicated gpt-5.1-codex|low arbiter separate "
+            "from the reviewer models)."
         ),
     )
     parser.add_argument(
@@ -137,6 +143,7 @@ def main() -> None:
         task_description=args.task,
         codex_configs=codex_configs,
         gemini_model=args.gemini_model,
+        claude_model=args.claude_model,
         arbiter_family=args.arbiter_family,
         max_queries=args.max_queries,
         base_workdir=args.auditors_workdir,

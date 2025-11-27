@@ -325,6 +325,7 @@ def run_pipeline(
     arbiter_family: str,
     max_queries: int,
     base_workdir: str,
+    claude_model: Optional[str] = "claude-opus-4-5",
     verbose: bool = False,
     output_lang: str = "zh",
     include_p2_p3: bool = False,
@@ -476,8 +477,10 @@ def run_pipeline(
             reasoning_effort=arb_effort,
         )
 
-    # Total planned auditors are Codex reviewers (if any) plus Gemini.
+    # Total planned auditors are Codex reviewers (if any) plus optional Claude and Gemini.
     total_planned_auditors = len(codex_auditor_configs) + 1  # +1 for Gemini
+    if claude_model:
+        total_planned_auditors += 1
     with progress_lock:
         progress["auditors_total"] = total_planned_auditors
 
@@ -502,12 +505,17 @@ def run_pipeline(
                 diff_mode_patch = ""
 
     # Set up Codex auditors (excluding arbiter-only config when arbiter_family=codex)
-    for idx, (model_name, effort) in enumerate(codex_auditor_configs, start=1):
+    next_auditor_index = 0
+    for model_name, effort in codex_auditor_configs:
+        next_auditor_index += 1
         name = f"Codex[{model_name}|{effort}]"
         slug = _unique_slug(name, slug_map)
         workdir = os.path.join(run_workdir_abs, slug)
         memo_root = os.path.join(base_workdir_abs, "memos", slug)
-        print(f"▶ Setting up auditor {idx}/{total_planned_auditors}: {name}", flush=True)
+        print(
+            f"▶ Setting up auditor {next_auditor_index}/{total_planned_auditors}: {name}",
+            flush=True,
+        )
         if has_git:
             worktree_repo = os.path.join(workdir, "repo")
             _create_worktree(repo_root=repo_root, worktree_path=worktree_repo, base_ref="HEAD")
@@ -548,8 +556,57 @@ def run_pipeline(
             )
         )
 
+    # Optionally set up Claude auditor reviewer.
+    if claude_model:
+        claude_name = f"Claude[{claude_model}]"
+        claude_slug = _unique_slug(claude_name, slug_map)
+        claude_workdir = os.path.join(run_workdir_abs, claude_slug)
+        claude_memo_root = os.path.join(base_workdir_abs, "memos", claude_slug)
+        next_auditor_index += 1
+        print(
+            f"▶ Setting up auditor {next_auditor_index}/{total_planned_auditors}: {claude_name}",
+            flush=True,
+        )
+        if has_git:
+            claude_repo = os.path.join(claude_workdir, "repo")
+            _create_worktree(
+                repo_root=repo_root,
+                worktree_path=claude_repo,
+                base_ref="HEAD",
+            )
+            if context_mode in ("repo", "stdin"):
+                _apply_patch_to_worktree(
+                    worktree_path=claude_repo,
+                    patch_text=repo_diff_patch,
+                    apply_to_index=False,
+                )
+            elif context_mode == "diff":
+                _apply_patch_to_worktree(
+                    worktree_path=claude_repo,
+                    patch_text=diff_mode_patch,
+                    apply_to_index=use_cached,
+                )
+            claude_workdir_final = claude_repo
+        else:
+            _copy_repo_into_workdir(
+                repo_root=repo_root,
+                workdir=claude_workdir,
+                include_git=context_mode == "diff",
+            )
+            claude_workdir_final = claude_workdir
+        claude_auditor = Auditor(
+            name=claude_name,
+            kind="claude",
+            model_name=claude_model,
+            workdir=claude_workdir_final,
+            reasoning_effort=None,
+            memo_root=claude_memo_root,
+        )
+        auditors.append(claude_auditor)
+
     # Set up Gemini auditor reviewer.
-    gemini_index = total_planned_auditors
+    next_auditor_index += 1
+    gemini_index = next_auditor_index
     gemini_name = f"Gemini[{gemini_model}]"
     gemini_slug = _unique_slug(gemini_name, slug_map)
     gemini_workdir = os.path.join(run_workdir_abs, gemini_slug)
@@ -835,6 +892,7 @@ def run_pipeline(
             final_markdown = translate_markdown_to_zh(
                 final_markdown,
                 cwd=run_workdir_abs,
+                model_name=gemini_model,
             )
         except Exception as exc:
             sys.stderr.write(f"Translation to Chinese failed: {exc}\n")
