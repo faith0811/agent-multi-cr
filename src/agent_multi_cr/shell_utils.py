@@ -42,29 +42,46 @@ def run_shell(
     """
     resolved_timeout = _resolve_timeout(timeout)
 
-    try:
-        result = subprocess.run(
-            cmd,
-            input=input_text,
-            text=True,
-            capture_output=True,
-            cwd=cwd,
-            timeout=resolved_timeout,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(
-            f"Command timed out after {resolved_timeout} seconds: {' '.join(cmd)}\n"
-            f"cwd: {cwd}\n"
-            f"partial stdout:\n{exc.stdout or ''}\n"
-            f"partial stderr:\n{exc.stderr or ''}"
-        ) from exc
+    # Retry on non-zero exit codes to handle transient CLI failures.
+    # We perform one initial attempt plus up to three retries (four attempts total).
+    max_retries = 3
+    last_result: Optional[subprocess.CompletedProcess] = None
 
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"Command failed with exit code {result.returncode}: {' '.join(cmd)}\n"
-            f"cwd: {cwd}\n"
-            f"stdout:\n{result.stdout}\n"
-            f"stderr:\n{result.stderr}"
-        )
-    return result.stdout.strip()
+    for attempt in range(max_retries + 1):
+        try:
+            result = subprocess.run(
+                cmd,
+                input=input_text,
+                text=True,
+                capture_output=True,
+                cwd=cwd,
+                timeout=resolved_timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            # Timeouts are treated as fatal so we do not repeatedly wait for
+            # long-running commands that are unlikely to succeed on retry.
+            raise RuntimeError(
+                f"Command timed out after {resolved_timeout} seconds: {' '.join(cmd)}\n"
+                f"cwd: {cwd}\n"
+                f"partial stdout:\n{exc.stdout or ''}\n"
+                f"partial stderr:\n{exc.stderr or ''}"
+            ) from exc
+
+        if result.returncode == 0:
+            return result.stdout.strip()
+
+        last_result = result
+        # If there are retries left, loop again; otherwise fall through and
+        # raise using the last non-zero result.
+        if attempt < max_retries:
+            continue
+
+    assert last_result is not None
+    raise RuntimeError(
+        f"Command failed with exit code {last_result.returncode} "
+        f"after {max_retries + 1} attempts: {' '.join(cmd)}\n"
+        f"cwd: {cwd}\n"
+        f"stdout:\n{last_result.stdout}\n"
+        f"stderr:\n{last_result.stderr}"
+    )
 
